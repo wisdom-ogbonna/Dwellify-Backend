@@ -1,5 +1,7 @@
 import axios from "axios";
+import admin from "../config/firebase.js";
 
+// ✅ Send OTP with Termii
 export const sendOTP = async (req, res) => {
   const { phone_number } = req.body;
 
@@ -35,32 +37,51 @@ export const sendOTP = async (req, res) => {
   }
 };
 
+// ✅ Verify OTP + Authenticate with Firebase
 export const verifyOTP = async (req, res) => {
-  const { pin_id, pin } = req.body; // <-- expect pin_id here
+  const { pin_id, pin, phone_number } = req.body;
 
-  if (!pin_id || !pin) {
-    return res
-      .status(400)
-      .json({ error: "pin_id and pin are required" });
+  if (!pin_id || !pin || !phone_number) {
+    return res.status(400).json({ error: "pin_id, pin, and phone_number are required" });
   }
 
   try {
+    // Step 1: Verify OTP with Termii
     const response = await axios.post(
       `${process.env.TERMII_BASE_URL}/api/sms/otp/verify`,
       {
         api_key: process.env.TERMII_API_KEY,
-        pin_id, // ✅ include pin_id
+        pin_id,
         pin,
       }
     );
 
-    return res.status(200).json({ success: true, data: response.data });
+    if (!response.data?.verified) {
+      return res.status(400).json({ error: "Invalid OTP" });
+    }
+
+    // Step 2: Create/Get Firebase User
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUserByPhoneNumber(phone_number);
+    } catch {
+      userRecord = await admin.auth().createUser({
+        phoneNumber: phone_number,
+      });
+    }
+
+    // Step 3: Generate Firebase Custom Token
+    const firebaseToken = await admin.auth().createCustomToken(userRecord.uid);
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified, Firebase user authenticated",
+      firebaseToken,
+    });
   } catch (error) {
     return res.status(500).json({
-      error: "Failed to verify OTP",
+      error: "Failed to verify OTP with Firebase",
       details: error.response?.data || error.message,
     });
   }
 };
-
-
