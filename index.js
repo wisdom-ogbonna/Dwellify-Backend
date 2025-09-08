@@ -1,8 +1,7 @@
 import express from "express";
-import dotenv from "dotenv";
+import "dotenv/config";
 import otpRoutes from "./routes/otpRoutes.js";
 
-dotenv.config();
 
 const app = express();
 
