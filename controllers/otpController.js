@@ -1,7 +1,8 @@
 import axios from "axios";
 import admin from "../config/firebase.js";
 
-// ✅ Send OTP with Termii
+const db = admin.firestore(); 
+
 export const sendOTP = async (req, res) => {
   const { phone_number } = req.body;
 
@@ -37,7 +38,7 @@ export const sendOTP = async (req, res) => {
   }
 };
 
-// ✅ Verify OTP + Authenticate with Firebase
+
 export const verifyOTP = async (req, res) => {
   const { pin_id, pin, phone_number } = req.body;
 
@@ -70,13 +71,26 @@ export const verifyOTP = async (req, res) => {
       });
     }
 
-    // Step 3: Generate Firebase Custom Token
+    // ✅ Step 3: Save minimal user info to Firestore
+    const userDocRef = db.collection("users").doc(userRecord.uid);
+    await userDocRef.set(
+      {
+        uid: userRecord.uid,
+        phoneNumber: phone_number,
+        verified: true,
+        createdAt: new Date(),
+      },
+      { merge: true } // 🔥 prevents overwriting if user exists
+    );
+
+    // Step 4: Generate Firebase Custom Token
     const firebaseToken = await admin.auth().createCustomToken(userRecord.uid);
 
     return res.status(200).json({
       success: true,
       message: "OTP verified, Firebase user authenticated",
       firebaseToken,
+      uid: userRecord.uid,
     });
   } catch (error) {
     return res.status(500).json({
