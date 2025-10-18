@@ -3,7 +3,6 @@ import admin from "../config/firebase.js";
 // ✅ Assign Role (Client or Agent) + (Optional Agent Info)
 export const assignRole = async (req, res) => {
   const { uid, role, agentDetails } = req.body;
-
   if (!uid || !role) {
     return res.status(400).json({ error: "uid and role are required" });
   }
