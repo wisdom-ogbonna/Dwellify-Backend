@@ -1,7 +1,5 @@
 import axios from "axios";
-import admin from "../config/firebase.js";
-
-const db = admin.firestore(); 
+import { admin, db } from "../config/firebase.js"; // removed unused 'bucket'
 
 export const sendOTP = async (req, res) => {
   const { phone_number } = req.body;
@@ -38,12 +36,13 @@ export const sendOTP = async (req, res) => {
   }
 };
 
-
 export const verifyOTP = async (req, res) => {
   const { pin_id, pin, phone_number } = req.body;
 
   if (!pin_id || !pin || !phone_number) {
-    return res.status(400).json({ error: "pin_id, pin, and phone_number are required" });
+    return res
+      .status(400)
+      .json({ error: "pin_id, pin, and phone_number are required" });
   }
 
   try {
@@ -57,7 +56,12 @@ export const verifyOTP = async (req, res) => {
       }
     );
 
-    if (!response.data?.verified) {
+    const verified =
+      response.data?.verified === true ||
+      response.data?.verified === "true" ||
+      response.data?.status === "success";
+
+    if (!verified) {
       return res.status(400).json({ error: "Invalid OTP" });
     }
 

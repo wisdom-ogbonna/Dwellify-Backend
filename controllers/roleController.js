@@ -1,6 +1,6 @@
-import admin from "../config/firebase.js";
+import { admin, db } from "../config/firebase.js";
 
-// ✅ Assign Role (Client or Agent) + (Optional Agent Info)
+
 export const assignRole = async (req, res) => {
   const { uid, role, agentDetails } = req.body;
   if (!uid || !role) {
@@ -12,7 +12,6 @@ export const assignRole = async (req, res) => {
   }
 
   try {
-    const db = admin.firestore();
 
     // 1️⃣ Set role in Firebase custom claims (for auth control)
     await admin.auth().setCustomUserClaims(uid, { role });
