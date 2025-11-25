@@ -31,17 +31,21 @@ export const addRentalProduct = async (req, res) => {
     }
 
     const images = [];
-    let video = "";
 
-    // Handle single image
-    if (req.files.image && req.files.image[0]) {
-      const imageUrl = await uploadFileToFirebase(req.files.image[0]);
-      images.push(imageUrl);
+    // Handle multiple images
+    if (req.files && req.files.images) {
+      const imageFiles = req.files.images;
+
+      for (const img of imageFiles) {
+        const imageUrl = await uploadFileToFirebase(img);
+        images.push(imageUrl);
+      }
     }
 
-    // Handle single video
-    if (req.files.video && req.files.video[0]) {
-      video = await uploadFileToFirebase(req.files.video[0]);
+    // Handle single image (if using req.files.image instead of images[])
+    if (req.files && req.files.image && req.files.image[0]) {
+      const singleImageUrl = await uploadFileToFirebase(req.files.image[0]);
+      images.push(singleImageUrl);
     }
 
     const newProduct = {
@@ -52,7 +56,6 @@ export const addRentalProduct = async (req, res) => {
       Hotel: Hotel === "true",
       Shortlet: Shortlet === "true",
       images,
-      video,
       created_at: new Date(),
     };
 
@@ -68,7 +71,6 @@ export const addRentalProduct = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 
 export const getAllRentalProducts = async (req, res) => {
   try {
@@ -86,6 +88,99 @@ export const getAllRentalProducts = async (req, res) => {
     return res.status(200).json({ products });
   } catch (error) {
     console.error("Error fetching rental products:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const updateRentalProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const productRef = db.collection("rentalProducts").doc(id);
+    const doc = await productRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const oldData = doc.data();
+    let updatedImages = oldData.images || [];
+
+    // If new images are uploaded → delete old ones from Firebase Storage
+    if (req.files && (req.files.images || req.files.image)) {
+      // DELETE previous images
+      for (const url of updatedImages) {
+        const fileName = url.split("/").pop();
+        await bucket.file(fileName).delete().catch(() => {});
+      }
+
+      updatedImages = [];
+
+      // Upload new images
+      if (req.files.images) {
+        for (const img of req.files.images) {
+          const url = await uploadFileToFirebase(img);
+          updatedImages.push(url);
+        }
+      }
+
+      if (req.files.image && req.files.image[0]) {
+        const url = await uploadFileToFirebase(req.files.image[0]);
+        updatedImages.push(url);
+      }
+    }
+
+    // Update fields
+    const updatedData = {
+      ...oldData,
+      ...req.body,
+      Apartment: req.body.Apartment === "true",
+      Hotel: req.body.Hotel === "true",
+      Shortlet: req.body.Shortlet === "true",
+      images: updatedImages,
+      updated_at: new Date(),
+    };
+
+    await productRef.update(updatedData);
+
+    return res.status(200).json({
+      message: "Rental product updated successfully",
+      id,
+      data: updatedData,
+    });
+  } catch (error) {
+    console.error("Error updating rental product:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+export const deleteRentalProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const productRef = db.collection("rentalProducts").doc(id);
+    const doc = await productRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const data = doc.data();
+
+    // Delete images from Firebase Storage
+    if (data.images && data.images.length > 0) {
+      for (const url of data.images) {
+        const fileName = url.split("/").pop();
+        await bucket.file(fileName).delete().catch(() => {});
+      }
+    }
+
+    await productRef.delete();
+
+    return res
+      .status(200)
+      .json({ message: "Rental product deleted successfully", id });
+  } catch (error) {
+    console.error("Error deleting rental product:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
