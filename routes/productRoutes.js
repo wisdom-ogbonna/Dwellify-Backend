@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import { addRentalProduct,deleteRentalProduct,getAllRentalProducts, updateRentalProduct } from "../controllers/productController.js";
+import { addRentalProduct,deleteRentalProduct,getAllRentalProducts, getRentalProductById, updateRentalProduct } from "../controllers/productController.js";
 
 const router = express.Router();
 const storage = multer.memoryStorage(); // store uploaded files in memory
@@ -20,6 +20,7 @@ router.post(
 
 // ✅ Get all rental products
 router.get("/get-rental-products", getAllRentalProducts);
+router.get("/get-rental-product/:id", getRentalProductById); // 👈 NEW
 
 router.put(
   "/update-rental-product/:id",

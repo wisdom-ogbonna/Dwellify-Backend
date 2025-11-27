@@ -185,3 +185,23 @@ export const deleteRentalProduct = async (req, res) => {
   }
 };
 
+export const getRentalProductById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const productRef = db.collection("rentalProducts").doc(id);
+    const doc = await productRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    return res.status(200).json({
+      id: doc.id,
+      ...doc.data(),
+    });
+  } catch (error) {
+    console.error("Error fetching rental product:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
