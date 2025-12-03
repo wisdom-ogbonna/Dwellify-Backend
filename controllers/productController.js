@@ -57,6 +57,7 @@ export const addRentalProduct = async (req, res) => {
       Shortlet: Shortlet === "true",
       images,
       created_at: new Date(),
+      agentId: req.user.uid, 
     };
 
     const docRef = await db.collection("rentalProducts").add(newProduct);
