@@ -20,6 +20,7 @@ const uploadFileToFirebase = async (file) => {
   });
 };
 
+// ===================== ADD PRODUCT =====================
 export const addRentalProduct = async (req, res) => {
   try {
     const { title, location, price, Apartment, Hotel, Shortlet } = req.body;
@@ -32,20 +33,18 @@ export const addRentalProduct = async (req, res) => {
 
     const images = [];
 
-    // Handle multiple images
+    // Multiple images
     if (req.files && req.files.images) {
-      const imageFiles = req.files.images;
-
-      for (const img of imageFiles) {
-        const imageUrl = await uploadFileToFirebase(img);
-        images.push(imageUrl);
+      for (const img of req.files.images) {
+        const url = await uploadFileToFirebase(img);
+        images.push(url);
       }
     }
 
-    // Handle single image (if using req.files.image instead of images[])
+    // Single image
     if (req.files && req.files.image && req.files.image[0]) {
-      const singleImageUrl = await uploadFileToFirebase(req.files.image[0]);
-      images.push(singleImageUrl);
+      const url = await uploadFileToFirebase(req.files.image[0]);
+      images.push(url);
     }
 
     const newProduct = {
@@ -57,7 +56,7 @@ export const addRentalProduct = async (req, res) => {
       Shortlet: Shortlet === "true",
       images,
       created_at: new Date(),
-      agentId: req.user.uid, 
+      agentId: req.user.uid,
     };
 
     const docRef = await db.collection("rentalProducts").add(newProduct);
@@ -73,9 +72,14 @@ export const addRentalProduct = async (req, res) => {
   }
 };
 
+// ===================== GET ALL PRODUCTS (USER ONLY) =====================
 export const getAllRentalProducts = async (req, res) => {
   try {
-    const snapshot = await db.collection("rentalProducts").orderBy("created_at", "desc").get();
+    const snapshot = await db
+      .collection("rentalProducts")
+      .where("agentId", "==", req.user.uid)
+      .orderBy("created_at", "desc")
+      .get();
 
     if (snapshot.empty) {
       return res.status(404).json({ message: "No rental products found" });
@@ -93,7 +97,8 @@ export const getAllRentalProducts = async (req, res) => {
   }
 };
 
-export const updateRentalProduct = async (req, res) => {
+// ===================== GET PRODUCT BY ID =====================
+export const getRentalProductById = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -104,12 +109,42 @@ export const updateRentalProduct = async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
+    const data = doc.data();
+
+    // Ownership check
+    if (data.agentId !== req.user.uid) {
+      return res.status(403).json({ error: "You cannot view this product" });
+    }
+
+    return res.status(200).json({ id: doc.id, ...data });
+  } catch (error) {
+    console.error("Error fetching rental product:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// ===================== UPDATE PRODUCT =====================
+export const updateRentalProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const productRef = db.collection("rentalProducts").doc(id);
+    const doc = await productRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
     const oldData = doc.data();
+
+    // Ownership check
+    if (oldData.agentId !== req.user.uid) {
+      return res.status(403).json({ error: "You cannot update this product" });
+    }
+
     let updatedImages = oldData.images || [];
 
-    // If new images are uploaded → delete old ones from Firebase Storage
     if (req.files && (req.files.images || req.files.image)) {
-      // DELETE previous images
+      // Delete previous images
       for (const url of updatedImages) {
         const fileName = url.split("/").pop();
         await bucket.file(fileName).delete().catch(() => {});
@@ -117,7 +152,6 @@ export const updateRentalProduct = async (req, res) => {
 
       updatedImages = [];
 
-      // Upload new images
       if (req.files.images) {
         for (const img of req.files.images) {
           const url = await uploadFileToFirebase(img);
@@ -131,7 +165,6 @@ export const updateRentalProduct = async (req, res) => {
       }
     }
 
-    // Update fields
     const updatedData = {
       ...oldData,
       ...req.body,
@@ -154,10 +187,11 @@ export const updateRentalProduct = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
+// ===================== DELETE PRODUCT =====================
 export const deleteRentalProduct = async (req, res) => {
   try {
     const { id } = req.params;
-
     const productRef = db.collection("rentalProducts").doc(id);
     const doc = await productRef.get();
 
@@ -167,7 +201,11 @@ export const deleteRentalProduct = async (req, res) => {
 
     const data = doc.data();
 
-    // Delete images from Firebase Storage
+    // Ownership check
+    if (data.agentId !== req.user.uid) {
+      return res.status(403).json({ error: "You cannot delete this product" });
+    }
+
     if (data.images && data.images.length > 0) {
       for (const url of data.images) {
         const fileName = url.split("/").pop();
@@ -182,27 +220,6 @@ export const deleteRentalProduct = async (req, res) => {
       .json({ message: "Rental product deleted successfully", id });
   } catch (error) {
     console.error("Error deleting rental product:", error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-};
-
-export const getRentalProductById = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const productRef = db.collection("rentalProducts").doc(id);
-    const doc = await productRef.get();
-
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-
-    return res.status(200).json({
-      id: doc.id,
-      ...doc.data(),
-    });
-  } catch (error) {
-    console.error("Error fetching rental product:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
