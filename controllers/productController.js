@@ -75,15 +75,15 @@ export const addRentalProduct = async (req, res) => {
 // ===================== GET ALL PRODUCTS (USER ONLY) =====================
 export const getAllRentalProducts = async (req, res) => {
   try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: "Unauthorized. Missing token." });
+    }
+
     const snapshot = await db
       .collection("rentalProducts")
       .where("agentId", "==", req.user.uid)
       .orderBy("created_at", "desc")
       .get();
-
-    if (snapshot.empty) {
-      return res.status(404).json({ message: "No rental products found" });
-    }
 
     const products = snapshot.docs.map((doc) => ({
       id: doc.id,
@@ -96,6 +96,7 @@ export const getAllRentalProducts = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 // ===================== GET PRODUCT BY ID =====================
 export const getRentalProductById = async (req, res) => {
