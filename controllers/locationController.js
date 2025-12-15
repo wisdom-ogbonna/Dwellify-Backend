@@ -1,7 +1,65 @@
 import redisClient from "../config/redis.js";
 
 /**
- * Update agent location
+ * ===============================
+ * AGENT GO ONLINE (MANUAL)
+ * ===============================
+ */
+export const agentGoOnline = async (req, res) => {
+  try {
+    const { agentId } = req.body;
+
+    if (!agentId) {
+      return res.status(400).json({ error: "Missing agentId" });
+    }
+
+    const key = `agent:location:${agentId}`;
+
+    await redisClient.hSet(key, {
+      isOnline: "true",
+      updatedAt: Date.now().toString(),
+    });
+
+    return res.json({
+      message: "Agent is ONLINE",
+      agentId,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+/**
+ * ===============================
+ * AGENT GO OFFLINE (MANUAL)
+ * ===============================
+ */
+export const agentGoOffline = async (req, res) => {
+  try {
+    const { agentId } = req.body;
+
+    if (!agentId) {
+      return res.status(400).json({ error: "Missing agentId" });
+    }
+
+    // 🔥 Agent explicitly goes offline
+    await redisClient.del(`agent:location:${agentId}`);
+
+    return res.json({
+      message: "Agent is OFFLINE",
+      agentId,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+/**
+ * ===============================
+ * UPDATE LOCATION (CONTINUOUS)
+ * ===============================
  */
 export const updateLocation = async (req, res) => {
   try {
@@ -12,24 +70,26 @@ export const updateLocation = async (req, res) => {
     }
 
     const key = `agent:location:${agentId}`;
-    const updatedAt = Date.now().toString();
+
+    const isOnline = await redisClient.hGet(key, "isOnline");
+    if (isOnline !== "true") {
+      return res.status(403).json({
+        error: "Agent is offline. Cannot update location.",
+      });
+    }
 
     await redisClient.hSet(key, {
       lat: String(lat),
       lng: String(lng),
       load: String(load),
       rating: String(rating),
-      updatedAt,
+      updatedAt: Date.now().toString(),
     });
 
-    await redisClient.expire(key, 60);
-
-    const io = req.app?.get("io");
-    if (io) {
-      io.emit("agentLocationUpdated", { agentId, lat, lng, updatedAt });
-    }
-
-    return res.json({ message: "Location updated" });
+    return res.json({
+      message: "Location updated",
+      agentId,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Server error" });
@@ -37,24 +97,27 @@ export const updateLocation = async (req, res) => {
 };
 
 /**
- * Get a single agent location
+ * ===============================
+ * GET SINGLE AGENT
+ * ===============================
  */
 export const getAgentLocation = async (req, res) => {
   try {
     const key = `agent:location:${req.params.agentId}`;
     const data = await redisClient.hGetAll(key);
 
-    if (!data || !data.lat) {
+    if (!data || data.isOnline !== "true") {
       return res.status(404).json({ error: "Agent offline" });
     }
 
     return res.json({
       agentId: req.params.agentId,
-      lat: parseFloat(data.lat),
-      lng: parseFloat(data.lng),
+      lat: Number(data.lat),
+      lng: Number(data.lng),
       load: Number(data.load || 0),
       rating: Number(data.rating || 5),
       updatedAt: Number(data.updatedAt),
+      isOnline: true,
     });
   } catch (err) {
     console.error(err);
@@ -63,7 +126,9 @@ export const getAgentLocation = async (req, res) => {
 };
 
 /**
- * Get all active agents
+ * ===============================
+ * GET ALL ONLINE AGENTS
+ * ===============================
  */
 export const getAllAgents = async (req, res) => {
   try {
@@ -71,14 +136,13 @@ export const getAllAgents = async (req, res) => {
     const agents = [];
 
     for (const key of keys) {
-      const id = key.split(":")[2];
       const data = await redisClient.hGetAll(key);
 
-      if (data && data.lat) {
+      if (data.isOnline === "true") {
         agents.push({
-          agentId: id,
-          lat: parseFloat(data.lat),
-          lng: parseFloat(data.lng),
+          agentId: key.split(":")[2],
+          lat: Number(data.lat),
+          lng: Number(data.lng),
           load: Number(data.load || 0),
           rating: Number(data.rating || 5),
           updatedAt: Number(data.updatedAt),
@@ -87,92 +151,6 @@ export const getAllAgents = async (req, res) => {
     }
 
     return res.json(agents);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Server error" });
-  }
-};
-
-/**
- * Distance calculator (Haversine)
- */
-function getDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371; // KM
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/**
- * ✅ Match agent to client using your scoring system
- * POST /api/location/match
- * Body: { clientId, lat, lng }
- */
-export const matchAgentToClient = async (req, res) => {
-  try {
-    const { clientId, lat, lng } = req.body;
-
-    if (!clientId || lat == null || lng == null) {
-      return res.status(400).json({ error: "Missing clientId, lat or lng" });
-    }
-
-    const keys = await redisClient.keys("agent:location:*");
-    if (!keys.length) return res.status(404).json({ error: "No agents online" });
-
-    let bestAgent = null;
-    let bestScore = Infinity;
-
-    for (const key of keys) {
-      const id = key.split(":")[2];
-      const agent = await redisClient.hGetAll(key);
-
-      if (!agent.lat) continue;
-
-      const distance = getDistance(
-        lat,
-        lng,
-        parseFloat(agent.lat),
-        parseFloat(agent.lng)
-      );
-
-      const ETA = (distance / 40) * 60; // minutes @ avg 40 km/h
-      const load = Number(agent.load || 0);
-      const rating = Number(agent.rating || 5);
-
-      // Your formula ✅
-      const score = 0.7 * ETA + 0.2 * load + 0.1 * (5 - rating);
-
-      if (score < bestScore) {
-        bestScore = score;
-        bestAgent = {
-          agentId: id,
-          lat: parseFloat(agent.lat),
-          lng: parseFloat(agent.lng),
-          ETA: Number(ETA.toFixed(2)),
-          load,
-          rating,
-          score: Number(score.toFixed(2)),
-        };
-      }
-    }
-
-    if (!bestAgent) {
-      return res.status(404).json({ error: "No suitable agent found" });
-    }
-
-    return res.json({
-      message: "Best agent matched",
-      clientId,
-      agent: bestAgent,
-    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Server error" });
