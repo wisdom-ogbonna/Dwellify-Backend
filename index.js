@@ -8,6 +8,7 @@ import otpRoutes from "./routes/otpRoutes.js";
 import roleRoutes from "./routes/roleRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
+import matchRoutes from "./routes/matchRoutes.js";
 
 const app = express();
 app.use(express.json());
@@ -16,6 +17,8 @@ app.use("/api/otp", otpRoutes);
 app.use("/api/role", roleRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/location", locationRoutes);
+app.use("/api/match", matchRoutes);
+
 
 // ✅ Create HTTP server first
 const server = http.createServer(app);
