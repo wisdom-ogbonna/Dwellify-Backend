@@ -36,10 +36,7 @@ export const matchAgentToClient = async (req, res) => {
   try {
     const { requestId } = req.params;
 
-    const request = await redisClient.hGetAll(
-      `client:request:${requestId}`
-    );
-
+    const request = await redisClient.hGetAll(`client:request:${requestId}`);
     if (!request || request.status !== "pending") {
       return res.status(404).json({ error: "Invalid request" });
     }
@@ -54,7 +51,9 @@ export const matchAgentToClient = async (req, res) => {
 
     for (const key of agentKeys) {
       const agent = await redisClient.hGetAll(key);
-      if (agent.isOnline !== "true") continue;
+
+      // ✅ agent considered online if location exists
+      if (!agent.lat || !agent.lng) continue;
 
       const distance = distanceInKm(
         clientLat,
@@ -63,8 +62,7 @@ export const matchAgentToClient = async (req, res) => {
         Number(agent.lng)
       );
 
-      if (distance > 5000) continue; // TEMP
-
+      if (distance > 5000) continue; // 5km radius
 
       const load = Number(agent.load || 0);
       const rating = Number(agent.rating || 5);
@@ -108,3 +106,4 @@ export const matchAgentToClient = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
+
