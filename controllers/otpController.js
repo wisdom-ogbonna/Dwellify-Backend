@@ -2,7 +2,7 @@ import axios from "axios";
 import { admin, db } from "../config/firebase.js";
 
 /* =========================
-   SEND OTP (UNCHANGED)
+   SEND OTP
 ========================= */
 export const sendOTP = async (req, res) => {
   const { phone_number } = req.body;
@@ -44,7 +44,7 @@ export const sendOTP = async (req, res) => {
 };
 
 /* =========================
-   VERIFY OTP (UPDATED)
+   VERIFY OTP
 ========================= */
 export const verifyOTP = async (req, res) => {
   const { pin_id, pin, phone_number } = req.body;
@@ -56,7 +56,6 @@ export const verifyOTP = async (req, res) => {
   }
 
   try {
-    /* 1️⃣ Verify OTP with Termii */
     const response = await axios.post(
       `${process.env.TERMII_BASE_URL}/api/sms/otp/verify`,
       {
@@ -75,7 +74,6 @@ export const verifyOTP = async (req, res) => {
       return res.status(400).json({ error: "Invalid OTP" });
     }
 
-    /* 2️⃣ Get or Create Firebase Auth User */
     let userRecord;
     try {
       userRecord = await admin.auth().getUserByPhoneNumber(phone_number);
@@ -85,7 +83,6 @@ export const verifyOTP = async (req, res) => {
       });
     }
 
-    /* 3️⃣ Check Firestore for existing role */
     const userRef = db.collection("users").doc(userRecord.uid);
     const userSnap = await userRef.get();
 
@@ -97,7 +94,6 @@ export const verifyOTP = async (req, res) => {
       role = userSnap.data().role || null;
       agentStatus = userSnap.data().agentStatus || null;
     } else {
-      // New user → create base record
       await userRef.set({
         uid: userRecord.uid,
         phoneNumber: phone_number,
@@ -107,20 +103,17 @@ export const verifyOTP = async (req, res) => {
       isNewUser = true;
     }
 
-    /* 4️⃣ Create Firebase Custom Token */
     const firebaseToken = await admin
       .auth()
       .createCustomToken(userRecord.uid);
 
-    /* 5️⃣ RETURN ROLE INFO 🔥 */
     return res.status(200).json({
       success: true,
-      message: "OTP verified successfully",
       firebaseToken,
       uid: userRecord.uid,
-      role,          // ← EXISTING ROLE
-      agentStatus,   // ← FOR AGENTS
-      isNewUser,     // ← FOR FRONTEND LOGIC
+      role,
+      agentStatus,
+      isNewUser,
     });
   } catch (error) {
     return res.status(500).json({
