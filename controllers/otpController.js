@@ -1,6 +1,9 @@
 import axios from "axios";
-import { admin, db } from "../config/firebase.js"; // removed unused 'bucket'
+import { admin, db } from "../config/firebase.js";
 
+/* =========================
+   SEND OTP (UNCHANGED)
+========================= */
 export const sendOTP = async (req, res) => {
   const { phone_number } = req.body;
 
@@ -27,7 +30,11 @@ export const sendOTP = async (req, res) => {
       }
     );
 
-    return res.status(200).json({ success: true, data: response.data });
+    return res.status(200).json({
+      success: true,
+      pin_id: response.data?.pin_id,
+      data: response.data,
+    });
   } catch (error) {
     return res.status(500).json({
       error: "Failed to send OTP",
@@ -36,6 +43,9 @@ export const sendOTP = async (req, res) => {
   }
 };
 
+/* =========================
+   VERIFY OTP (UPDATED)
+========================= */
 export const verifyOTP = async (req, res) => {
   const { pin_id, pin, phone_number } = req.body;
 
@@ -46,7 +56,7 @@ export const verifyOTP = async (req, res) => {
   }
 
   try {
-    // Step 1: Verify OTP with Termii
+    /* 1️⃣ Verify OTP with Termii */
     const response = await axios.post(
       `${process.env.TERMII_BASE_URL}/api/sms/otp/verify`,
       {
@@ -65,7 +75,7 @@ export const verifyOTP = async (req, res) => {
       return res.status(400).json({ error: "Invalid OTP" });
     }
 
-    // Step 2: Create/Get Firebase User
+    /* 2️⃣ Get or Create Firebase Auth User */
     let userRecord;
     try {
       userRecord = await admin.auth().getUserByPhoneNumber(phone_number);
@@ -75,30 +85,46 @@ export const verifyOTP = async (req, res) => {
       });
     }
 
-    // ✅ Step 3: Save minimal user info to Firestore
-    const userDocRef = db.collection("users").doc(userRecord.uid);
-    await userDocRef.set(
-      {
+    /* 3️⃣ Check Firestore for existing role */
+    const userRef = db.collection("users").doc(userRecord.uid);
+    const userSnap = await userRef.get();
+
+    let role = null;
+    let agentStatus = null;
+    let isNewUser = false;
+
+    if (userSnap.exists) {
+      role = userSnap.data().role || null;
+      agentStatus = userSnap.data().agentStatus || null;
+    } else {
+      // New user → create base record
+      await userRef.set({
         uid: userRecord.uid,
         phoneNumber: phone_number,
         verified: true,
         createdAt: new Date(),
-      },
-      { merge: true } // 🔥 prevents overwriting if user exists
-    );
+      });
+      isNewUser = true;
+    }
 
-    // Step 4: Generate Firebase Custom Token
-    const firebaseToken = await admin.auth().createCustomToken(userRecord.uid);
+    /* 4️⃣ Create Firebase Custom Token */
+    const firebaseToken = await admin
+      .auth()
+      .createCustomToken(userRecord.uid);
 
+    /* 5️⃣ RETURN ROLE INFO 🔥 */
     return res.status(200).json({
       success: true,
-      message: "OTP verified, Firebase user authenticated",
+      message: "OTP verified successfully",
       firebaseToken,
       uid: userRecord.uid,
+      role,          // ← EXISTING ROLE
+      agentStatus,   // ← FOR AGENTS
+      isNewUser,     // ← FOR FRONTEND LOGIC
     });
   } catch (error) {
     return res.status(500).json({
-      error: "Failed to verify OTP with Firebase",
+      error: "Failed to verify OTP",
       details: error.response?.data || error.message,
     });
   }

@@ -13,7 +13,6 @@ import agentRoutes from "./routes/agentRoutes.js";
 
 const app = express();
 app.use(express.json());
-app.use("/api", agentRoutes);
 app.use("/api/otp", otpRoutes);
 app.use("/api/role", roleRoutes);
 app.use("/api/products", productRoutes);
