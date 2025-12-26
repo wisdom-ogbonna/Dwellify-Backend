@@ -73,9 +73,6 @@ export const matchAgentToClient = async (req, res) => {
         bestScore = score;
         bestAgent = {
           agentId: key.split(":")[2],
-          name: agent.name || null,
-          phone: agent.phone || null,
-          agencyName: agent.agencyName || null,
           distance,
           load,
           rating,
@@ -97,7 +94,11 @@ export const matchAgentToClient = async (req, res) => {
       status: "assigned",
     });
 
-    await redisClient.hIncrBy(`agent:location:${bestAgent.agentId}`, "load", 1);
+    await redisClient.hIncrBy(
+      `agent:location:${bestAgent.agentId}`,
+      "load",
+      1
+    );
 
     res.json({ message: "Agent matched", agent: bestAgent });
   } catch (err) {
