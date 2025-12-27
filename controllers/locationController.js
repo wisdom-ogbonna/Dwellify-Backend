@@ -1,4 +1,5 @@
 import redisClient from "../config/redis.js";
+import { db } from "../config/firebase.js";
 
 /**
  * ===============================
@@ -101,22 +102,52 @@ export const updateLocation = async (req, res) => {
  * GET SINGLE AGENT
  * ===============================
  */
+
 export const getAgentLocation = async (req, res) => {
   try {
-    const key = `agent:location:${req.params.agentId}`;
-    const data = await redisClient.hGetAll(key);
+    const { agentId } = req.params;
 
-    if (!data || data.isOnline !== "true") {
+    // 1️⃣ Get Redis location
+    const key = `agent:location:${agentId}`;
+    const redisData = await redisClient.hGetAll(key);
+
+    if (!redisData || redisData.isOnline !== "true") {
       return res.status(404).json({ error: "Agent offline" });
     }
 
+    // 2️⃣ Get Firestore agent profile
+    const userSnap = await db.collection("users").doc(agentId).get();
+
+    if (!userSnap.exists) {
+      return res.status(404).json({ error: "Agent not found" });
+    }
+
+    const userData = userSnap.data();
+
+    if (userData.role !== "agent" || !userData.agentDetails) {
+      return res.status(400).json({ error: "User is not an agent" });
+    }
+
+    const agent = userData.agentDetails;
+
+    // 3️⃣ Merge Redis + Firestore
     return res.json({
-      agentId: req.params.agentId,
-      lat: Number(data.lat),
-      lng: Number(data.lng),
-      load: Number(data.load || 0),
-      rating: Number(data.rating || 5),
-      updatedAt: Number(data.updatedAt),
+      agentId,
+
+      // 🔹 Firestore data
+      name: agent.name,
+      phone: agent.phone,
+      email: agent.email,
+      agencyName: agent.agencyName,
+      licenseId: agent.licenseId,
+      verified: agent.verified,
+
+      // 🔹 Redis data
+      lat: redisData.lat ? Number(redisData.lat) : null,
+      lng: redisData.lng ? Number(redisData.lng) : null,
+      load: Number(redisData.load || 0),
+      rating: Number(redisData.rating || 5),
+      updatedAt: Number(redisData.updatedAt),
       isOnline: true,
     });
   } catch (err) {
@@ -125,29 +156,54 @@ export const getAgentLocation = async (req, res) => {
   }
 };
 
+
 /**
  * ===============================
  * GET ALL ONLINE AGENTS
  * ===============================
  */
+
 export const getAllAgents = async (req, res) => {
   try {
     const keys = await redisClient.keys("agent:location:*");
     const agents = [];
 
     for (const key of keys) {
-      const data = await redisClient.hGetAll(key);
+      const agentId = key.split(":")[2];
+      const redisData = await redisClient.hGetAll(key);
 
-      if (data.isOnline === "true") {
-        agents.push({
-          agentId: key.split(":")[2],
-          lat: Number(data.lat),
-          lng: Number(data.lng),
-          load: Number(data.load || 0),
-          rating: Number(data.rating || 5),
-          updatedAt: Number(data.updatedAt),
-        });
-      }
+      // Skip offline agents
+      if (redisData.isOnline !== "true") continue;
+
+      // 🔥 Get agent profile from Firestore
+      const userSnap = await db.collection("users").doc(agentId).get();
+      if (!userSnap.exists) continue;
+
+      const userData = userSnap.data();
+
+      // Ensure user is an agent
+      if (userData.role !== "agent" || !userData.agentDetails) continue;
+
+      const agentDetails = userData.agentDetails;
+
+      agents.push({
+        agentId,
+
+        // 🔹 From Firestore
+        name: agentDetails.name,
+        phone: agentDetails.phone,
+        email: agentDetails.email,
+        agencyName: agentDetails.agencyName,
+        licenseId: agentDetails.licenseId,
+        verified: agentDetails.verified,
+
+        // 🔹 From Redis
+        lat: redisData.lat ? Number(redisData.lat) : null,
+        lng: redisData.lng ? Number(redisData.lng) : null,
+        load: Number(redisData.load || 0),
+        rating: Number(redisData.rating || 5),
+        updatedAt: Number(redisData.updatedAt),
+      });
     }
 
     return res.json(agents);

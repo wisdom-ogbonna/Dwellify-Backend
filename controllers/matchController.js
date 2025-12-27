@@ -1,8 +1,16 @@
 import redisClient from "../config/redis.js";
-import { distanceInKm } from "../utils/distance.js";
+import { db } from "../config/firebase.js";
 
 /**
+ * ===============================
  * CLIENT CREATES A REQUEST
+ * ===============================
+ * Body:
+ * {
+ *   clientId,
+ *   lat,
+ *   lng
+ * }
  */
 export const createClientRequest = async (req, res) => {
   try {
@@ -12,7 +20,7 @@ export const createClientRequest = async (req, res) => {
       return res.status(400).json({ error: "Missing fields" });
     }
 
-    const requestId = `req_${Date.now()}`;
+    const requestId = `req_${Date.now()}_${clientId}`;
 
     await redisClient.hSet(`client:request:${requestId}`, {
       clientId,
@@ -22,87 +30,151 @@ export const createClientRequest = async (req, res) => {
       createdAt: Date.now().toString(),
     });
 
-    res.json({ requestId, message: "Client request created" });
+    return res.json({
+      message: "Client request created",
+      requestId,
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    console.error("Create request error:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 };
 
 /**
- * MATCH CLIENT TO BEST AGENT
+ * ===============================
+ * MATCH AGENT TO CLIENT
+ * ===============================
+ * Params:
+ * - requestId
  */
 export const matchAgentToClient = async (req, res) => {
   try {
     const { requestId } = req.params;
 
-    const request = await redisClient.hGetAll(`client:request:${requestId}`);
-    if (!request || request.status !== "pending") {
-      return res.status(404).json({ error: "Invalid request" });
+    const requestKey = `client:request:${requestId}`;
+    const requestData = await redisClient.hGetAll(requestKey);
+
+    if (!requestData || !requestData.clientId) {
+      return res.status(404).json({ error: "Request not found" });
     }
 
-    const clientLat = Number(request.lat);
-    const clientLng = Number(request.lng);
+    if (requestData.status === "matched") {
+      return res.status(400).json({ error: "Request already matched" });
+    }
+
+    const clientLat = Number(requestData.lat);
+    const clientLng = Number(requestData.lng);
 
     const agentKeys = await redisClient.keys("agent:location:*");
 
-    let bestAgent = null;
-    let bestScore = Infinity;
+    let selectedAgent = null;
+    let shortestDistance = Infinity;
 
     for (const key of agentKeys) {
-      const agent = await redisClient.hGetAll(key);
+      const redisAgent = await redisClient.hGetAll(key);
 
-      // ✅ agent considered online if location exists
-      if (!agent.lat || !agent.lng) continue;
+      if (redisAgent.isOnline !== "true") continue;
 
-      const distance = distanceInKm(
+      const agentLat = Number(redisAgent.lat);
+      const agentLng = Number(redisAgent.lng);
+
+      if (isNaN(agentLat) || isNaN(agentLng)) continue;
+
+      const distance = getDistanceKm(
         clientLat,
         clientLng,
-        Number(agent.lat),
-        Number(agent.lng)
+        agentLat,
+        agentLng
       );
 
-      if (distance > 5000) continue; // 5km radius
-
-      const load = Number(agent.load || 0);
-      const rating = Number(agent.rating || 5);
-
-      const score = distance * 1.5 + load * 2 - rating;
-
-      if (score < bestScore) {
-        bestScore = score;
-        bestAgent = {
+      if (distance < shortestDistance) {
+        shortestDistance = distance;
+        selectedAgent = {
           agentId: key.split(":")[2],
+          redis: redisAgent,
           distance,
-          load,
-          rating,
         };
       }
     }
 
-    if (!bestAgent) {
-      return res.status(404).json({ error: "No agent available" });
+    if (!selectedAgent) {
+      return res.status(404).json({ error: "No available agents nearby" });
     }
 
-    await redisClient.hSet(`match:${requestId}`, {
-      agentId: bestAgent.agentId,
-      clientId: request.clientId,
-      assignedAt: Date.now().toString(),
+    // 🔥 Get agent profile from Firestore
+    const agentSnap = await db
+      .collection("users")
+      .doc(selectedAgent.agentId)
+      .get();
+
+    if (!agentSnap.exists) {
+      return res.status(404).json({ error: "Agent profile not found" });
+    }
+
+    const agentUser = agentSnap.data();
+
+    if (agentUser.role !== "agent" || !agentUser.agentDetails) {
+      return res.status(400).json({ error: "User is not an agent" });
+    }
+
+    const agent = agentUser.agentDetails;
+
+    // 🔒 Lock request
+    await redisClient.hSet(requestKey, {
+      status: "matched",
+      agentId: selectedAgent.agentId,
+      matchedAt: Date.now().toString(),
     });
 
-    await redisClient.hSet(`client:request:${requestId}`, {
-      status: "assigned",
+    return res.json({
+      message: "Agent matched successfully",
+
+      request: {
+        requestId,
+        clientId: requestData.clientId,
+      },
+
+      agent: {
+        agentId: selectedAgent.agentId,
+
+        // 🔹 Firestore data
+        name: agent.name,
+        phone: agent.phone,
+        email: agent.email,
+        agencyName: agent.agencyName,
+        licenseId: agent.licenseId,
+        verified: agent.verified,
+
+        // 🔹 Redis data
+        lat: Number(selectedAgent.redis.lat),
+        lng: Number(selectedAgent.redis.lng),
+        load: Number(selectedAgent.redis.load || 0),
+        rating: Number(selectedAgent.redis.rating || 5),
+
+        distanceKm: Number(selectedAgent.distance.toFixed(2)),
+      },
     });
-
-    await redisClient.hIncrBy(
-      `agent:location:${bestAgent.agentId}`,
-      "load",
-      1
-    );
-
-    res.json({ message: "Agent matched", agent: bestAgent });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    console.error("Match error:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 };
+
+/**
+ * ===============================
+ * DISTANCE HELPER (HAVERSINE)
+ * ===============================
+ */
+const getDistanceKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(deg2rad(lat1)) *
+      Math.cos(deg2rad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+};
+
+const deg2rad = (deg) => deg * (Math.PI / 180);
