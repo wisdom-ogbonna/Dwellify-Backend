@@ -23,26 +23,28 @@ const uploadFileToFirebase = async (file) => {
 // ===================== ADD PRODUCT =====================
 export const addRentalProduct = async (req, res) => {
   try {
-    const { title, location, price, Apartment, Hotel, Shortlet } = req.body;
+    const { title, location, price, propertyType } = req.body;
 
-    if (!title || !location || !price) {
-      return res
-        .status(400)
-        .json({ error: "Title, location, and price are required" });
+    if (!title || !location || !price || !propertyType) {
+      return res.status(400).json({
+        error: "Title, location, price and propertyType are required",
+      });
+    }
+
+    if (!["Apartment", "Hotel", "Shortlet"].includes(propertyType)) {
+      return res.status(400).json({ error: "Invalid property type" });
     }
 
     const images = [];
 
-    // Multiple images
-    if (req.files && req.files.images) {
+    if (req.files?.images) {
       for (const img of req.files.images) {
         const url = await uploadFileToFirebase(img);
         images.push(url);
       }
     }
 
-    // Single image
-    if (req.files && req.files.image && req.files.image[0]) {
+    if (req.files?.image?.[0]) {
       const url = await uploadFileToFirebase(req.files.image[0]);
       images.push(url);
     }
@@ -51,9 +53,7 @@ export const addRentalProduct = async (req, res) => {
       title,
       location,
       price,
-      Apartment: Apartment === "true",
-      Hotel: Hotel === "true",
-      Shortlet: Shortlet === "true",
+      propertyType, // 🔥 IMPORTANT
       images,
       created_at: new Date(),
       agentId: req.user.uid,
@@ -96,7 +96,6 @@ export const getAllRentalProducts = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
 
 // ===================== GET PRODUCT BY ID =====================
 export const getRentalProductById = async (req, res) => {
@@ -148,7 +147,10 @@ export const updateRentalProduct = async (req, res) => {
       // Delete previous images
       for (const url of updatedImages) {
         const fileName = url.split("/").pop();
-        await bucket.file(fileName).delete().catch(() => {});
+        await bucket
+          .file(fileName)
+          .delete()
+          .catch(() => {});
       }
 
       updatedImages = [];
@@ -210,7 +212,10 @@ export const deleteRentalProduct = async (req, res) => {
     if (data.images && data.images.length > 0) {
       for (const url of data.images) {
         const fileName = url.split("/").pop();
-        await bucket.file(fileName).delete().catch(() => {});
+        await bucket
+          .file(fileName)
+          .delete()
+          .catch(() => {});
       }
     }
 

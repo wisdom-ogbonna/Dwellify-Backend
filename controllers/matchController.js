@@ -1,23 +1,15 @@
 import redisClient from "../config/redis.js";
 import { db } from "../config/firebase.js";
 
-/**
- * ===============================
- * CLIENT CREATES A REQUEST
- * ===============================
- * Body:
- * {
- *   clientId,
- *   lat,
- *   lng
- * }
- */
 export const createClientRequest = async (req, res) => {
   try {
-    const { clientId, lat, lng } = req.body;
+    const { clientId, lat, lng, propertyType } = req.body;
 
-    if (!clientId || lat == null || lng == null) {
+    if (!clientId || lat == null || lng == null || !propertyType) {
       return res.status(400).json({ error: "Missing fields" });
+    }
+    if (!["Apartment", "Hotel", "Shortlet"].includes(propertyType)) {
+      return res.status(400).json({ error: "Invalid property type" });
     }
 
     const requestId = `req_${Date.now()}_${clientId}`;
@@ -26,6 +18,7 @@ export const createClientRequest = async (req, res) => {
       clientId,
       lat: String(lat),
       lng: String(lng),
+      propertyType, // ✅ STORE IT
       status: "pending",
       createdAt: Date.now().toString(),
     });
@@ -47,10 +40,23 @@ export const createClientRequest = async (req, res) => {
  * Params:
  * - requestId
  */
+
+/**
+ * ===============================
+ * MATCH AGENT TO CLIENT REQUEST
+ * ===============================
+ */
 export const matchAgentToClient = async (req, res) => {
   try {
     const { requestId } = req.params;
 
+    if (!requestId) {
+      return res.status(400).json({ error: "Missing requestId" });
+    }
+
+    /**
+     * 1️⃣ GET CLIENT REQUEST FROM REDIS
+     */
     const requestKey = `client:request:${requestId}`;
     const requestData = await redisClient.hGetAll(requestKey);
 
@@ -65,6 +71,13 @@ export const matchAgentToClient = async (req, res) => {
     const clientLat = Number(requestData.lat);
     const clientLng = Number(requestData.lng);
 
+    if (isNaN(clientLat) || isNaN(clientLng)) {
+      return res.status(400).json({ error: "Invalid client location" });
+    }
+
+    /**
+     * 2️⃣ FIND ALL ONLINE AGENTS
+     */
     const agentKeys = await redisClient.keys("agent:location:*");
 
     let selectedAgent = null;
@@ -73,7 +86,7 @@ export const matchAgentToClient = async (req, res) => {
     for (const key of agentKeys) {
       const redisAgent = await redisClient.hGetAll(key);
 
-      if (redisAgent.isOnline !== "true") continue;
+      if (!redisAgent || redisAgent.isOnline !== "true") continue;
 
       const agentLat = Number(redisAgent.lat);
       const agentLng = Number(redisAgent.lng);
@@ -101,7 +114,9 @@ export const matchAgentToClient = async (req, res) => {
       return res.status(404).json({ error: "No available agents nearby" });
     }
 
-    // 🔥 Get agent profile from Firestore
+    /**
+     * 3️⃣ FETCH AGENT PROFILE FROM FIRESTORE
+     */
     const agentSnap = await db
       .collection("users")
       .doc(selectedAgent.agentId)
@@ -119,25 +134,32 @@ export const matchAgentToClient = async (req, res) => {
 
     const agent = agentUser.agentDetails;
 
-    // 🔒 Lock request
+    /**
+     * 4️⃣ LOCK REQUEST (PREVENT DOUBLE MATCH)
+     */
     await redisClient.hSet(requestKey, {
       status: "matched",
       agentId: selectedAgent.agentId,
       matchedAt: Date.now().toString(),
     });
 
+    /**
+     * 5️⃣ RESPONSE
+     */
     return res.json({
       message: "Agent matched successfully",
 
       request: {
         requestId,
         clientId: requestData.clientId,
+        lat: clientLat,
+        lng: clientLng,
       },
 
       agent: {
         agentId: selectedAgent.agentId,
 
-        // 🔹 Firestore data
+        // 🔥 Firestore agent profile
         name: agent.name,
         phone: agent.phone,
         email: agent.email,
@@ -145,7 +167,7 @@ export const matchAgentToClient = async (req, res) => {
         licenseId: agent.licenseId,
         verified: agent.verified,
 
-        // 🔹 Redis data
+        // 🔥 Redis live data
         lat: Number(selectedAgent.redis.lat),
         lng: Number(selectedAgent.redis.lng),
         load: Number(selectedAgent.redis.load || 0),
@@ -154,9 +176,9 @@ export const matchAgentToClient = async (req, res) => {
         distanceKm: Number(selectedAgent.distance.toFixed(2)),
       },
     });
-  } catch (err) {
-    console.error("Match error:", err);
-    return res.status(500).json({ error: "Server error" });
+  } catch (error) {
+    console.error("Match error:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -169,12 +191,15 @@ const getDistanceKm = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
   const dLat = deg2rad(lat2 - lat1);
   const dLon = deg2rad(lon2 - lon1);
+
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(deg2rad(lat1)) *
       Math.cos(deg2rad(lat2)) *
       Math.sin(dLon / 2) ** 2;
+
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
 const deg2rad = (deg) => deg * (Math.PI / 180);
+
