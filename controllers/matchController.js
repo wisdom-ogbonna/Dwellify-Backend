@@ -70,6 +70,13 @@ export const matchAgentToClient = async (req, res) => {
 
     const clientLat = Number(requestData.lat);
     const clientLng = Number(requestData.lng);
+    const requestPropertyType = requestData.propertyType;
+
+    if (!["Apartment", "Hotel", "Shortlet"].includes(requestPropertyType)) {
+  return res.status(400).json({ error: "Invalid request property type" });
+}
+
+
 
     if (isNaN(clientLat) || isNaN(clientLng)) {
       return res.status(400).json({ error: "Invalid client location" });
@@ -83,32 +90,51 @@ export const matchAgentToClient = async (req, res) => {
     let selectedAgent = null;
     let shortestDistance = Infinity;
 
-    for (const key of agentKeys) {
-      const redisAgent = await redisClient.hGetAll(key);
+for (const key of agentKeys) {
+  const redisAgent = await redisClient.hGetAll(key);
 
-      if (!redisAgent || redisAgent.isOnline !== "true") continue;
+  if (!redisAgent || redisAgent.isOnline !== "true") continue;
 
-      const agentLat = Number(redisAgent.lat);
-      const agentLng = Number(redisAgent.lng);
+  const agentId = key.split(":")[2];
 
-      if (isNaN(agentLat) || isNaN(agentLng)) continue;
+  const agentLat = Number(redisAgent.lat);
+  const agentLng = Number(redisAgent.lng);
 
-      const distance = getDistanceKm(
-        clientLat,
-        clientLng,
-        agentLat,
-        agentLng
-      );
+  if (isNaN(agentLat) || isNaN(agentLng)) continue;
 
-      if (distance < shortestDistance) {
-        shortestDistance = distance;
-        selectedAgent = {
-          agentId: key.split(":")[2],
-          redis: redisAgent,
-          distance,
-        };
-      }
-    }
+  // 🔥 STEP 4A: CHECK PROPERTY TYPE (CRITICAL)
+let canServe = false;
+
+try {
+  canServe = await agentHasPropertyType(
+    agentId,
+    requestPropertyType
+  );
+} catch (err) {
+  continue; // skip broken agent safely
+}
+
+if (!canServe) continue;
+
+
+  // 🔥 STEP 4B: DISTANCE CHECK
+  const distance = getDistanceKm(
+    clientLat,
+    clientLng,
+    agentLat,
+    agentLng
+  );
+
+  if (distance < shortestDistance) {
+    shortestDistance = distance;
+    selectedAgent = {
+      agentId,
+      redis: redisAgent,
+      distance,
+    };
+  }
+}
+
 
     if (!selectedAgent) {
       return res.status(404).json({ error: "No available agents nearby" });
@@ -187,6 +213,20 @@ export const matchAgentToClient = async (req, res) => {
  * DISTANCE HELPER (HAVERSINE)
  * ===============================
  */
+const agentHasPropertyType = async (agentId, propertyType) => {
+  const snapshot = await db
+    .collection("rentalProducts")
+    .where("agentId", "==", agentId)
+    .where("propertyType", "==", propertyType)
+    .limit(1)
+    .get();
+
+  return !snapshot.empty;
+};
+
+
+
+
 const getDistanceKm = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
   const dLat = deg2rad(lat2 - lat1);

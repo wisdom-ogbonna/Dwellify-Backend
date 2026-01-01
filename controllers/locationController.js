@@ -31,11 +31,7 @@ export const agentGoOnline = async (req, res) => {
   }
 };
 
-/**
- * ===============================
- * AGENT GO OFFLINE (MANUAL)
- * ===============================
- */
+
 export const agentGoOffline = async (req, res) => {
   try {
     const { agentId } = req.body;
