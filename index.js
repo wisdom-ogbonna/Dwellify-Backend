@@ -10,6 +10,7 @@ import productRoutes from "./routes/productRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
 import matchRoutes from "./routes/matchRoutes.js";
 import agentRoutes from "./routes/agentRoutes.js";
+import getProductsByAgentId from "./routes/getProductsByAgentId.js";
 
 const app = express();
 app.use(express.json());
@@ -19,6 +20,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/match", matchRoutes);
 app.use("/api/agent", agentRoutes);
+app.use("/api/agentid", getProductsByAgentId);
 
 
 
