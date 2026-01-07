@@ -16,12 +16,15 @@
     "axios": "^1.11.0",
     "body-parser": "^2.2.0",
     "dotenv": "^17.2.1",
-    "express": "^5.1.0",
+    "expo-server-sdk": "^4.0.0",
+    "express": "^5.2.1",
     "firebase-admin": "^13.6.0",
     "multer": "^2.0.2",
     "redis": "^5.10.0",
     "socket.io": "^4.8.1",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "expo-notifications": "~0.29.14",
+    "expo-device": "~7.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

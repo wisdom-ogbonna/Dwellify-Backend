@@ -1,6 +1,12 @@
 import redisClient from "../config/redis.js";
 import { db } from "../config/firebase.js";
+import { v4 as uuidv4 } from "uuid";
 
+/**
+ * ===============================
+ * CREATE CLIENT REQUEST
+ * ===============================
+ */
 export const createClientRequest = async (req, res) => {
   try {
     const { clientId, lat, lng, propertyType } = req.body;
@@ -8,20 +14,25 @@ export const createClientRequest = async (req, res) => {
     if (!clientId || lat == null || lng == null || !propertyType) {
       return res.status(400).json({ error: "Missing fields" });
     }
+
     if (!["Apartment", "Hotel", "Shortlet"].includes(propertyType)) {
       return res.status(400).json({ error: "Invalid property type" });
     }
 
-    const requestId = `req_${Date.now()}_${clientId}`;
+    const requestId = uuidv4();
+    const requestKey = `client:request:${requestId}`;
 
-    await redisClient.hSet(`client:request:${requestId}`, {
+    await redisClient.hSet(requestKey, {
       clientId,
       lat: String(lat),
       lng: String(lng),
-      propertyType, // ✅ STORE IT
+      propertyType,
       status: "pending",
       createdAt: Date.now().toString(),
     });
+
+    // Optional TTL (e.g. 10 mins)
+    await redisClient.expire(requestKey, 600);
 
     return res.json({
       message: "Client request created",
@@ -32,14 +43,6 @@ export const createClientRequest = async (req, res) => {
     return res.status(500).json({ error: "Server error" });
   }
 };
-
-/**
- * ===============================
- * MATCH AGENT TO CLIENT
- * ===============================
- * Params:
- * - requestId
- */
 
 /**
  * ===============================
@@ -55,7 +58,7 @@ export const matchAgentToClient = async (req, res) => {
     }
 
     /**
-     * 1️⃣ GET CLIENT REQUEST FROM REDIS
+     * 1️⃣ GET CLIENT REQUEST
      */
     const requestKey = `client:request:${requestId}`;
     const requestData = await redisClient.hGetAll(requestKey);
@@ -72,76 +75,75 @@ export const matchAgentToClient = async (req, res) => {
     const clientLng = Number(requestData.lng);
     const requestPropertyType = requestData.propertyType;
 
-    if (!["Apartment", "Hotel", "Shortlet"].includes(requestPropertyType)) {
-  return res.status(400).json({ error: "Invalid request property type" });
-}
-
-
-
     if (isNaN(clientLat) || isNaN(clientLng)) {
       return res.status(400).json({ error: "Invalid client location" });
     }
 
     /**
-     * 2️⃣ FIND ALL ONLINE AGENTS
+     * 2️⃣ FIND ONLINE AGENTS
      */
     const agentKeys = await redisClient.keys("agent:location:*");
 
     let selectedAgent = null;
     let shortestDistance = Infinity;
 
-for (const key of agentKeys) {
-  const redisAgent = await redisClient.hGetAll(key);
+    for (const key of agentKeys) {
+      const redisAgent = await redisClient.hGetAll(key);
 
-  if (!redisAgent || redisAgent.isOnline !== "true") continue;
+      if (!redisAgent || redisAgent.isOnline !== "true") continue;
 
-  const agentId = key.split(":")[2];
+      const agentId = key.split(":")[2];
 
-  const agentLat = Number(redisAgent.lat);
-  const agentLng = Number(redisAgent.lng);
+      // Skip agents who declined this request
+      const declinedAgents = await redisClient.sMembers(
+        `client:request:declined:${requestId}`
+      );
+      if (declinedAgents.includes(agentId)) continue;
 
-  if (isNaN(agentLat) || isNaN(agentLng)) continue;
+      const agentLat = Number(redisAgent.lat);
+      const agentLng = Number(redisAgent.lng);
+      if (isNaN(agentLat) || isNaN(agentLng)) continue;
 
-  // 🔥 STEP 4A: CHECK PROPERTY TYPE (CRITICAL)
-let canServe = false;
+      /**
+       * 3️⃣ PROPERTY TYPE CHECK
+       */
+      let canServe = false;
+      try {
+        canServe = await agentHasPropertyType(
+          agentId,
+          requestPropertyType
+        );
+      } catch {
+        continue;
+      }
+      if (!canServe) continue;
 
-try {
-  canServe = await agentHasPropertyType(
-    agentId,
-    requestPropertyType
-  );
-} catch (err) {
-  continue; // skip broken agent safely
-}
+      /**
+       * 4️⃣ DISTANCE CHECK
+       */
+      const distance = getDistanceKm(
+        clientLat,
+        clientLng,
+        agentLat,
+        agentLng
+      );
 
-if (!canServe) continue;
-
-
-  // 🔥 STEP 4B: DISTANCE CHECK
-  const distance = getDistanceKm(
-    clientLat,
-    clientLng,
-    agentLat,
-    agentLng
-  );
-
-  if (distance < shortestDistance) {
-    shortestDistance = distance;
-    selectedAgent = {
-      agentId,
-      redis: redisAgent,
-      distance,
-    };
-  }
-}
-
+      if (distance < shortestDistance) {
+        shortestDistance = distance;
+        selectedAgent = {
+          agentId,
+          redis: redisAgent,
+          distance,
+        };
+      }
+    }
 
     if (!selectedAgent) {
       return res.status(404).json({ error: "No available agents nearby" });
     }
 
     /**
-     * 3️⃣ FETCH AGENT PROFILE FROM FIRESTORE
+     * 5️⃣ FETCH AGENT PROFILE
      */
     const agentSnap = await db
       .collection("users")
@@ -153,40 +155,37 @@ if (!canServe) continue;
     }
 
     const agentUser = agentSnap.data();
-
     if (agentUser.role !== "agent" || !agentUser.agentDetails) {
       return res.status(400).json({ error: "User is not an agent" });
     }
 
     const agent = agentUser.agentDetails;
 
-    
     /**
-     * 4️⃣ LOCK REQUEST (PREVENT DOUBLE MATCH)
+     * 6️⃣ LOCK REQUEST
      */
     await redisClient.hSet(requestKey, {
-      status: "matched",
+      status: "offered",
       agentId: selectedAgent.agentId,
-      matchedAt: Date.now().toString(),
+      offeredAt: Date.now().toString(),
     });
 
     /**
-     * 5️⃣ RESPONSE
+     * 7️⃣ RESPONSE
      */
     return res.json({
-      message: "Agent matched successfully",
-
+      message: "Request offered to agent",
       request: {
         requestId,
         clientId: requestData.clientId,
         lat: clientLat,
         lng: clientLng,
+        propertyType: requestPropertyType,
       },
-
       agent: {
         agentId: selectedAgent.agentId,
 
-        // 🔥 Firestore agent profile
+        // Firestore profile
         name: agent.name,
         phone: agent.phone,
         email: agent.email,
@@ -194,7 +193,7 @@ if (!canServe) continue;
         licenseId: agent.licenseId,
         verified: agent.verified,
 
-        // 🔥 Redis live data
+        // Redis live data
         lat: Number(selectedAgent.redis.lat),
         lng: Number(selectedAgent.redis.lng),
         load: Number(selectedAgent.redis.load || 0),
@@ -211,9 +210,10 @@ if (!canServe) continue;
 
 /**
  * ===============================
- * DISTANCE HELPER (HAVERSINE)
+ * HELPERS
  * ===============================
  */
+
 const agentHasPropertyType = async (agentId, propertyType) => {
   const snapshot = await db
     .collection("rentalProducts")
@@ -224,9 +224,6 @@ const agentHasPropertyType = async (agentId, propertyType) => {
 
   return !snapshot.empty;
 };
-
-
-
 
 const getDistanceKm = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
@@ -243,4 +240,3 @@ const getDistanceKm = (lat1, lon1, lat2, lon2) => {
 };
 
 const deg2rad = (deg) => deg * (Math.PI / 180);
-
