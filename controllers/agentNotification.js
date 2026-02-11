@@ -9,37 +9,36 @@ export const agentNotification = async (req, res) => {
     }
 
     if (!pushToken && !fcmToken) {
-      return res.status(400).json({ error: "pushToken or fcmToken required" });
+      return res.status(400).json({ error: "At least one token required" });
     }
 
+    // 🔹 Ensure notification object exists
     const updateData = {
       updatedAt: Date.now(),
+      notification: {}, // create notification object
     };
 
-    // Save Expo/APNs token (mostly iOS, sometimes Android Expo)
-    if (pushToken) {
-      updateData.pushToken = pushToken;
+    // 🔹 Save Expo push token
+    if (pushToken && pushToken.startsWith("ExponentPushToken")) {
+      updateData.notification.expoToken = pushToken;
     }
 
-    // Save Firebase Cloud Messaging token (mostly Android, sometimes iOS Firebase)
+    // 🔹 Save FCM token
     if (fcmToken) {
-      updateData.fcmToken = fcmToken;
+      updateData.notification.fcmToken = fcmToken;
     }
 
-    // Save platform for debugging & targeting
+    // 🔹 Save platform
     if (platform) {
-      updateData.platform = platform; // "android" or "ios"
+      updateData.platform = platform; // android | ios
     }
 
+    // 🔹 Merge with existing data in Firestore
     await db.collection("agents").doc(agentId).set(updateData, { merge: true });
 
-    console.log("✅ Token(s) saved for agent:", agentId);
+    console.log("✅ Tokens saved for agent:", agentId);
 
-    res.json({
-      success: true,
-      message: "Push token(s) saved successfully",
-    });
-
+    res.json({ success: true });
   } catch (err) {
     console.error("❌ Token Save Error:", err);
     res.status(500).json({ error: "Failed to save token" });

@@ -3,54 +3,52 @@ import admin from "firebase-admin";
 
 const expo = new Expo();
 
-export async function sendPushNotification(token, payload) {
+export async function sendPushNotification(notification, payload) {
   try {
-    // 🟣 EXPO PUSH TOKEN
-    if (Expo.isExpoPushToken(token)) {
+    // 🔵 PRIORITY: FCM (Android + iOS production)
+    if (notification?.fcmToken) {
+      console.log("🔵 Sending via FCM");
+
+      await admin.messaging().send({
+        token: notification.fcmToken,
+        notification: {
+          title: payload.title,
+          body: payload.body,
+        },
+        data: payload.data,
+        android: { priority: "high" },
+        apns: {
+          payload: { aps: { sound: "default" } },
+        },
+      });
+
+      return;
+    }
+
+    // 🟣 FALLBACK: EXPO (Expo Go / Dev Client)
+    if (
+      notification?.expoToken &&
+      Expo.isExpoPushToken(notification.expoToken)
+    ) {
       console.log("🟣 Sending via EXPO");
 
-      const messages = [
+      await expo.sendPushNotificationsAsync([
         {
-          to: token,
+          to: notification.expoToken,
           sound: "default",
           title: payload.title,
           body: payload.body,
           data: payload.data,
           priority: "high",
-          channelId: "default",
         },
-      ];
+      ]);
 
-      const ticketChunk = await expo.sendPushNotificationsAsync(messages);
-      console.log("🟣 Expo push response:", ticketChunk);
       return;
     }
 
-    // 🔵 FCM TOKEN (Android or iOS Firebase builds)
-    console.log("🔵 Sending via FCM");
-
-    await admin.messaging().send({
-      token: token,
-      notification: {
-        title: payload.title,
-        body: payload.body,
-      },
-      data: payload.data,
-      android: {
-        priority: "high",
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: "default",
-          },
-        },
-      },
-    });
-
-    console.log("🔵 FCM push sent successfully");
-  } catch (error) {
-    console.error("❌ Push send error:", error.message);
-    throw error;
+    console.log("⚠️ No valid push token found");
+  } catch (err) {
+    console.error("❌ Push send error:", err.message);
+    throw err;
   }
 }

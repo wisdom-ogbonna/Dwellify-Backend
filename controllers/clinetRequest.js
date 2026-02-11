@@ -5,16 +5,13 @@ export const clinetRequest = async (req, res) => {
   try {
     const { agentId, clientId, clientName, propertyType, lat, lng } = req.body;
 
-    // 1️⃣ Validate input
     if (!agentId || !clientId || !propertyType) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Ensure numbers for location
     const latitude = Number(lat);
     const longitude = Number(lng);
 
-    // 2️⃣ Create Firestore request first
     const docRef = await db.collection("agent_requests").add({
       agentId,
       clientId,
@@ -28,46 +25,35 @@ export const clinetRequest = async (req, res) => {
 
     console.log(`✅ Request created: ${docRef.id}`);
 
-    // 3️⃣ Fetch agent push token (works for both Android & iOS)
     const agentSnap = await db.collection("agents").doc(agentId).get();
 
     if (!agentSnap.exists) {
-      console.log("⚠️ Agent not found, skipping push");
+      console.log("⚠️ Agent not found");
     } else {
-      const agentData = agentSnap.data();
+      const { notification } = agentSnap.data();
 
-      // Support BOTH naming styles
-      const pushToken = agentData.fcmToken || agentData.pushToken || null;
+      if (notification) {
+        await sendPushNotification(notification, {
+          title: "New Client Request 🚨",
+          body: `${clientName || "A client"} needs a ${propertyType}`,
+          data: {
+            requestId: String(docRef.id),
+            lat: String(latitude),
+            lng: String(longitude),
+            type: "NEW_BOOKING_REQUEST",
+          },
+        });
 
-      // 4️⃣ Send push notification safely
-      if (pushToken) {
-        try {
-          await sendPushNotification(pushToken, {
-            title: "New Client Request 🚨",
-            body: `${clientName || "A client"} needs a ${propertyType}`,
-            data: {
-              requestId: String(docRef.id),
-              lat: String(latitude),
-              lng: String(longitude),
-              type: "NEW_BOOKING_REQUEST",
-            },
-          });
-
-          console.log("📨 Push sent to agent");
-        } catch (pushError) {
-          console.error("⚠️ Push failed:", pushError.message);
-        }
+        console.log("📨 Push sent");
       } else {
-        console.log("⚠️ No push token found for agent");
+        console.log("⚠️ No notification token");
       }
     }
 
-    // 5️⃣ Send success response
     res.status(201).json({
       success: true,
       requestId: docRef.id,
     });
-
   } catch (error) {
     console.error("❌ Controller Error:", error);
     res.status(500).json({ error: "Failed to create request" });
