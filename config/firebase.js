@@ -15,6 +15,7 @@ admin.initializeApp({
 // Initialize Firestore and Storage Bucket
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
+const messaging = admin.messaging(); // ✅ ADD THIS
 
 // Export named instances
-export { admin, db, bucket };
+export { admin, db, bucket,messaging };

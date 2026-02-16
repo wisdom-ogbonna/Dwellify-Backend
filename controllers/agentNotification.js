@@ -2,45 +2,29 @@ import { db } from "../config/firebase.js";
 
 export const agentNotification = async (req, res) => {
   try {
-    const { agentId, pushToken, fcmToken, platform } = req.body;
+    const { agentId, platform, expoPushToken, fcmToken } = req.body;
 
-    if (!agentId) {
-      return res.status(400).json({ error: "agentId is required" });
+    if (!agentId || !platform) {
+      return res.status(400).json({ error: "Missing fields" });
     }
 
-    if (!pushToken && !fcmToken) {
-      return res.status(400).json({ error: "At least one token required" });
+    const updateData = { platform };
+
+    if (platform === "ios" && expoPushToken) {
+      updateData.expoPushToken = expoPushToken;
     }
 
-    // 🔹 Ensure notification object exists
-    const updateData = {
-      updatedAt: Date.now(),
-      notification: {}, // create notification object
-    };
-
-    // 🔹 Save Expo push token
-    if (pushToken && pushToken.startsWith("ExponentPushToken")) {
-      updateData.notification.expoToken = pushToken;
+    if (platform === "android" && fcmToken) {
+      updateData.fcmToken = fcmToken;
     }
 
-    // 🔹 Save FCM token
-    if (fcmToken) {
-      updateData.notification.fcmToken = fcmToken;
-    }
+    await db.collection("agents").doc(agentId).set(updateData, {
+      merge: true,
+    });
 
-    // 🔹 Save platform
-    if (platform) {
-      updateData.platform = platform; // android | ios
-    }
-
-    // 🔹 Merge with existing data in Firestore
-    await db.collection("agents").doc(agentId).set(updateData, { merge: true });
-
-    console.log("✅ Tokens saved for agent:", agentId);
-
-    res.json({ success: true });
+    res.json({ success: true, message: "Push token saved" });
   } catch (err) {
-    console.error("❌ Token Save Error:", err);
+    console.error(err);
     res.status(500).json({ error: "Failed to save token" });
   }
 };

@@ -3,51 +3,44 @@ import { sendPushNotification } from "../utils/push.js";
 
 export const clinetRequest = async (req, res) => {
   try {
-    const { agentId, clientId, clientName, propertyType, lat, lng } = req.body;
+    const {
+      agentId,
+      clientId,
+      clientName,
+      propertyType,
+      lat,
+      lng,
+    } = req.body;
 
     if (!agentId || !clientId || !propertyType) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const latitude = Number(lat);
-    const longitude = Number(lng);
-
     const docRef = await db.collection("agent_requests").add({
       agentId,
       clientId,
-      clientName: clientName || "A client",
+      clientName,
       propertyType,
-      lat: latitude,
-      lng: longitude,
+      lat,
+      lng,
       status: "pending",
       createdAt: Date.now(),
     });
 
-    console.log(`✅ Request created: ${docRef.id}`);
-
+    // 🔔 Get Agent Info
     const agentSnap = await db.collection("agents").doc(agentId).get();
+    const agentData = agentSnap.data();
 
-    if (!agentSnap.exists) {
-      console.log("⚠️ Agent not found");
-    } else {
-      const { notification } = agentSnap.data();
-
-      if (notification) {
-        await sendPushNotification(notification, {
-          title: "New Client Request 🚨",
-          body: `${clientName || "A client"} needs a ${propertyType}`,
-          data: {
-            requestId: String(docRef.id),
-            lat: String(latitude),
-            lng: String(longitude),
-            type: "NEW_BOOKING_REQUEST",
-          },
-        });
-
-        console.log("📨 Push sent");
-      } else {
-        console.log("⚠️ No notification token");
-      }
+    if (agentData) {
+      await sendPushNotification(agentData, {
+        title: "New Client 🚨",
+        body: `${clientName} needs a ${propertyType}`,
+        data: {
+          requestId: docRef.id,
+          lat,
+          lng,
+        },
+      });
     }
 
     res.status(201).json({
@@ -55,7 +48,7 @@ export const clinetRequest = async (req, res) => {
       requestId: docRef.id,
     });
   } catch (error) {
-    console.error("❌ Controller Error:", error);
+    console.error(error);
     res.status(500).json({ error: "Failed to create request" });
   }
 };

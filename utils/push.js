@@ -1,40 +1,22 @@
 import { Expo } from "expo-server-sdk";
-import admin from "firebase-admin";
+import { messaging } from "../config/firebase.js";
 
 const expo = new Expo();
 
-export async function sendPushNotification(notification, payload) {
+export const sendPushNotification = async (agentData, payload) => {
   try {
-    // 🔵 PRIORITY: FCM (Android + iOS production)
-    if (notification?.fcmToken) {
-      console.log("🔵 Sending via FCM");
-
-      await admin.messaging().send({
-        token: notification.fcmToken,
-        notification: {
-          title: payload.title,
-          body: payload.body,
-        },
-        data: payload.data,
-        android: { priority: "high" },
-        apns: {
-          payload: { aps: { sound: "default" } },
-        },
-      });
-
-      return;
-    }
-
-    // 🟣 FALLBACK: EXPO (Expo Go / Dev Client)
-    if (
-      notification?.expoToken &&
-      Expo.isExpoPushToken(notification.expoToken)
-    ) {
-      console.log("🟣 Sending via EXPO");
+    // ==========================
+    // 📱 iOS → Expo Push
+    // ==========================
+    if (agentData.platform === "ios" && agentData.expoPushToken) {
+      if (!Expo.isExpoPushToken(agentData.expoPushToken)) {
+        console.log("Invalid Expo token");
+        return;
+      }
 
       await expo.sendPushNotificationsAsync([
         {
-          to: notification.expoToken,
+          to: agentData.expoPushToken,
           sound: "default",
           title: payload.title,
           body: payload.body,
@@ -43,12 +25,32 @@ export async function sendPushNotification(notification, payload) {
         },
       ]);
 
-      return;
+      console.log("iOS Push Sent");
     }
 
-    console.log("⚠️ No valid push token found");
-  } catch (err) {
-    console.error("❌ Push send error:", err.message);
-    throw err;
+    // ==========================
+    // 🤖 Android → FCM Push
+    // ==========================
+    if (agentData.platform === "android" && agentData.fcmToken) {
+      await messaging.send({
+        token: agentData.fcmToken,
+        notification: {
+          title: payload.title,
+          body: payload.body,
+        },
+        data: {
+          requestId: String(payload.data.requestId),
+          lat: String(payload.data.lat),
+          lng: String(payload.data.lng),
+        },
+        android: {
+          priority: "high",
+        },
+      });
+
+      console.log("Android Push Sent");
+    }
+  } catch (error) {
+    console.error("Push error:", error);
   }
-}
+};
