@@ -3,14 +3,7 @@ import { sendPushNotification } from "../utils/push.js";
 
 export const clinetRequest = async (req, res) => {
   try {
-    const {
-      agentId,
-      clientId,
-      clientName,
-      propertyType,
-      lat,
-      lng,
-    } = req.body;
+    const { agentId, clientId, clientName, propertyType, lat, lng } = req.body;
 
     if (!agentId || !clientId || !propertyType) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -37,8 +30,12 @@ export const clinetRequest = async (req, res) => {
         body: `${clientName} needs a ${propertyType}`,
         data: {
           requestId: docRef.id,
-          lat,
-          lng,
+          agentId: agentId.toString(),
+          clientId: clientId.toString(),
+          clientName: clientName || "",
+          propertyType: propertyType || "",
+          lat: lat?.toString() || "",
+          lng: lng?.toString() || "",
         },
       });
     }
