@@ -3,13 +3,20 @@ import { sendPushNotification } from "../utils/push.js";
 
 export const clinetRequest = async (req, res) => {
   try {
-    const { agentId, clientId, clientName, propertyType, lat, lng } = req.body;
+    const { requestId, agentId, clientId, clientName, propertyType, lat, lng } = req.body;
+
+    if (!requestId) {
+      return res.status(400).json({ error: "Missing requestId" });
+    }
 
     if (!agentId || !clientId || !propertyType) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const docRef = await db.collection("agent_requests").add({
+    const docRef = db.collection("agent_requests").doc(requestId);
+
+    await docRef.set({
+      requestId,
       agentId,
       clientId,
       clientName,
@@ -17,10 +24,9 @@ export const clinetRequest = async (req, res) => {
       lat,
       lng,
       status: "pending",
-      createdAt: Date.now(),
-    });
+      updatedAt: Date.now(),
+    }, { merge: true });
 
-    // 🔔 Get Agent Info
     const agentSnap = await db.collection("agents").doc(agentId).get();
     const agentData = agentSnap.data();
 
@@ -29,7 +35,7 @@ export const clinetRequest = async (req, res) => {
         title: "New Client 🚨",
         body: `${clientName} needs a ${propertyType}`,
         data: {
-          requestId: docRef.id,
+          requestId,
           agentId: agentId.toString(),
           clientId: clientId.toString(),
           clientName: clientName || "",
@@ -40,12 +46,13 @@ export const clinetRequest = async (req, res) => {
       });
     }
 
-    res.status(201).json({
+    res.status(200).json({
       success: true,
-      requestId: docRef.id,
+      requestId,
     });
+
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Failed to create request" });
+    res.status(500).json({ error: "Failed to process request" });
   }
 };
