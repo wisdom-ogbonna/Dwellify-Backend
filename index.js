@@ -13,6 +13,7 @@ import agentRoutes from "./routes/agentRoutes.js";
 import getProductsByAgentId from "./routes/getProductsByAgentId.js";
 import clientRequestRoutes from "./routes/clientRequestRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 
 const app = express();
 app.use(express.json());
@@ -25,6 +26,7 @@ app.use("/api/match", matchRoutes);
 app.use("/api/agentid", getProductsByAgentId);
 app.use("/api", notificationRoutes);
 app.use("/api/client", clientRequestRoutes);
+app.use("/api/users", userRoutes);
 
 
 
