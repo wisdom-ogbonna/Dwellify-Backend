@@ -7,14 +7,15 @@ import { Server as IOServer } from "socket.io";
 import "./config/redis.js";
 import otpRoutes from "./routes/otpRoutes.js";
 import roleRoutes from "./routes/roleRoutes.js";
+import agentRoutes from "./routes/agentRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
 import matchRoutes from "./routes/matchRoutes.js";
-import agentRoutes from "./routes/agentRoutes.js";
 import getProductsByAgentId from "./routes/getProductsByAgentId.js";
 import clientRequestRoutes from "./routes/clientRequestRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+import clientRoutes from "./routes/clientRoutes.js";
 
 const app = express();
 app.use(
@@ -26,6 +27,7 @@ app.use(
 app.use(express.json());
 app.use("/api/otp", otpRoutes);
 app.use("/api/role", roleRoutes);
+app.use("/api/client", clientRoutes);
 app.use("/api/agent", agentRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/location", locationRoutes);
