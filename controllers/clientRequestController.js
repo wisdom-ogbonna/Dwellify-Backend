@@ -41,7 +41,7 @@ export const acceptClientRequest = async (req, res) => {
       propertyType: request.propertyType,
       lat: Number(request.lat),
       lng: Number(request.lng),
-      status: "active",
+  status: "matched",
       createdAt: new Date(),
     });
 
@@ -101,6 +101,83 @@ export const declineClientRequest = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+
+export const startInspection = async (req, res) => {
+  try {
+    const { agentId, requestId } = req.body;
+
+    const requestKey = `client:request:${requestId}`;
+    const request = await redisClient.hGetAll(requestKey);
+
+    if (!request || !request.clientId) {
+      return res.status(404).json({ error: "Request not found" });
+    }
+
+    if (request.agentId !== agentId) {
+      return res.status(403).json({ error: "Not your request" });
+    }
+
+    if (request.status !== "matched") {
+      return res.status(400).json({
+        error: "Inspection can only start after match",
+      });
+    }
+
+    await redisClient.hSet(requestKey, {
+      status: "inspection_started",
+      inspectionStartedAt: Date.now().toString(),
+    });
+
+    return res.json({
+      message: "Inspection started",
+      requestId,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+
+
+export const endInspection = async (req, res) => {
+  try {
+    const { agentId, requestId } = req.body;
+
+    const requestKey = `client:request:${requestId}`;
+    const request = await redisClient.hGetAll(requestKey);
+
+    if (!request || !request.clientId) {
+      return res.status(404).json({ error: "Request not found" });
+    }
+
+    if (request.agentId !== agentId) {
+      return res.status(403).json({ error: "Not your request" });
+    }
+
+    if (request.status !== "inspection_started") {
+      return res.status(400).json({
+        error: "Inspection has not started",
+      });
+    }
+
+    await redisClient.hSet(requestKey, {
+      status: "inspection_completed",
+      inspectionEndedAt: Date.now().toString(),
+    });
+
+    await redisClient.hIncrBy(`agent:location:${agentId}`, "load", -1);
+
+    return res.json({
+      message: "Inspection completed",
+      requestId,
+    });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Server error" });
   }
 };

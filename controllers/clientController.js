@@ -71,6 +71,9 @@ export const getClientProfile = async (req, res) => {
   try {
     const { uid } = req.params;
 
+    console.log("PARAM UID:", uid);
+    console.log("TOKEN UID:", req.user?.uid);
+
     if (req.user.uid !== uid) {
       return res.status(403).json({
         error: "Unauthorized access",
@@ -86,6 +89,8 @@ export const getClientProfile = async (req, res) => {
     }
 
     const data = doc.data();
+
+    console.log("USER DATA:", data);
 
     if (data.role !== "client" || !data.clientDetails) {
       return res.status(400).json({
