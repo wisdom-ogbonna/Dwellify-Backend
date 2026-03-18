@@ -62,13 +62,18 @@ export const matchAgentToClient = async (req, res) => {
      */
     const requestKey = `client:request:${requestId}`;
     const requestData = await redisClient.hGetAll(requestKey);
+    // 🚨 BLOCK matching when already accepted or inspection started
+    if (
+      requestData.status === "matched" ||
+      requestData.status === "inspection_started"
+    ) {
+      return res.status(400).json({
+        error: `Cannot match now (status: ${requestData.status})`,
+      });
+    }
 
     if (!requestData || !requestData.clientId) {
       return res.status(404).json({ error: "Request not found" });
-    }
-
-    if (requestData.status === "matched") {
-      return res.status(400).json({ error: "Request already matched" });
     }
 
     const clientLat = Number(requestData.lat);
@@ -93,6 +98,12 @@ export const matchAgentToClient = async (req, res) => {
       if (!redisAgent || redisAgent.isOnline !== "true") continue;
 
       const agentId = key.split(":")[2];
+      // 🚨 BLOCK BUSY AGENTS
+      const agentStatus = await redisClient.get(`agent:status:${agentId}`);
+
+      if (agentStatus === "matched" || agentStatus === "inspection_started") {
+        continue; // ❌ skip this agent
+      }
 
       // Skip agents who declined this request
       const declinedAgents = await redisClient.sMembers(
@@ -109,10 +120,7 @@ export const matchAgentToClient = async (req, res) => {
        */
       let canServe = false;
       try {
-        canServe = await agentHasPropertyType(
-          agentId,
-          requestPropertyType
-        );
+        canServe = await agentHasPropertyType(agentId, requestPropertyType);
       } catch {
         continue;
       }
@@ -121,12 +129,7 @@ export const matchAgentToClient = async (req, res) => {
       /**
        * 4️⃣ DISTANCE CHECK
        */
-      const distance = getDistanceKm(
-        clientLat,
-        clientLng,
-        agentLat,
-        agentLng
-      );
+      const distance = getDistanceKm(clientLat, clientLng, agentLat, agentLng);
 
       if (distance < shortestDistance) {
         shortestDistance = distance;
@@ -232,9 +235,7 @@ const getDistanceKm = (lat1, lon1, lat2, lon2) => {
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(deg2rad(lat1)) *
-      Math.cos(deg2rad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) ** 2;
 
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };

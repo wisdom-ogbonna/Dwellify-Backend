@@ -32,6 +32,9 @@ export const acceptClientRequest = async (req, res) => {
       matchedAt: Date.now().toString(),
     });
 
+    // ✅ SET AGENT STATUS (SEPARATE LINE)
+    await redisClient.set(`agent:status:${agentId}`, "matched");
+
     await redisClient.hIncrBy(`agent:location:${agentId}`, "load", 1);
 
     await db.collection("matches").add({
@@ -41,7 +44,7 @@ export const acceptClientRequest = async (req, res) => {
       propertyType: request.propertyType,
       lat: Number(request.lat),
       lng: Number(request.lng),
-  status: "matched",
+      status: "matched",
       createdAt: new Date(),
     });
 
@@ -89,10 +92,7 @@ export const declineClientRequest = async (req, res) => {
       declinedAt: Date.now().toString(),
     });
 
-    await redisClient.sAdd(
-      `client:request:declined:${requestId}`,
-      agentId
-    );
+    await redisClient.sAdd(`client:request:declined:${requestId}`, agentId);
 
     return res.json({
       message: "Request declined successfully",
@@ -104,7 +104,6 @@ export const declineClientRequest = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
-
 
 export const startInspection = async (req, res) => {
   try {
@@ -132,6 +131,8 @@ export const startInspection = async (req, res) => {
       inspectionStartedAt: Date.now().toString(),
     });
 
+    await redisClient.set(`agent:status:${agentId}`, "inspection_started");
+
     return res.json({
       message: "Inspection started",
       requestId,
@@ -141,8 +142,6 @@ export const startInspection = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
-
-
 
 export const endInspection = async (req, res) => {
   try {
@@ -169,6 +168,8 @@ export const endInspection = async (req, res) => {
       status: "inspection_completed",
       inspectionEndedAt: Date.now().toString(),
     });
+
+    await redisClient.set(`agent:status:${agentId}`, "inspection_completed");
 
     await redisClient.hIncrBy(`agent:location:${agentId}`, "load", -1);
 
