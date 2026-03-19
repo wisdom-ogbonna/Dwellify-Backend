@@ -11,7 +11,13 @@ export const acceptClientRequest = async (req, res) => {
     if (!agentId || !requestId) {
       return res.status(400).json({ error: "Missing fields" });
     }
-
+    // ❌ BLOCK IF SUSPENDED
+    const isSuspended = await redisClient.get(`agent:suspended:${agentId}`);
+    if (isSuspended === "true") {
+      return res.status(403).json({
+        error: "Account suspended. Please make payment.",
+      });
+    }
     const requestKey = `client:request:${requestId}`;
     const request = await redisClient.hGetAll(requestKey);
 
@@ -108,7 +114,12 @@ export const declineClientRequest = async (req, res) => {
 export const startInspection = async (req, res) => {
   try {
     const { agentId, requestId } = req.body;
-
+    const isSuspended = await redisClient.get(`agent:suspended:${agentId}`);
+    if (isSuspended === "true") {
+      return res.status(403).json({
+        error: "Account suspended. Please pay to continue.",
+      });
+    }
     const requestKey = `client:request:${requestId}`;
     const request = await redisClient.hGetAll(requestKey);
 
@@ -171,12 +182,36 @@ export const endInspection = async (req, res) => {
 
     await redisClient.set(`agent:status:${agentId}`, "inspection_completed");
 
-    await redisClient.hIncrBy(`agent:location:${agentId}`, "load", -1);
+await redisClient.hIncrBy(`agent:location:${agentId}`, "load", -1);
 
-    return res.json({
-      message: "Inspection completed",
-      requestId,
-    });
+/**
+ * ✅ COUNT INSPECTIONS
+ */
+const inspectionCount = await redisClient.incr(
+  `agent:inspectionCount:${agentId}`
+);
+
+console.log("Inspection count:", inspectionCount);
+
+/**
+ * ✅ SUSPEND AFTER 3
+ */
+if (inspectionCount >= 3) {
+  await redisClient.set(`agent:suspended:${agentId}`, "true");
+  await redisClient.set(`agent:status:${agentId}`, "suspended");
+
+  return res.json({
+    message: "Inspection completed. Account suspended. Please pay.",
+    suspended: true,
+    inspectionCount,
+  });
+}
+
+return res.json({
+  message: "Inspection completed",
+  requestId,
+  inspectionCount,
+});
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });

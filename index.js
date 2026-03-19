@@ -16,6 +16,7 @@ import clientRequestRoutes from "./routes/clientRequestRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import clientRoutes from "./routes/clientRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
 
 const app = express();
 app.use(
@@ -36,6 +37,7 @@ app.use("/api/agentid", getProductsByAgentId);
 app.use("/api", notificationRoutes);
 app.use("/api/client", clientRequestRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/payment", paymentRoutes);
 
 
 

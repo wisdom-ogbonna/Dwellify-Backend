@@ -104,6 +104,11 @@ export const matchAgentToClient = async (req, res) => {
       if (agentStatus === "matched" || agentStatus === "inspection_started") {
         continue; // ❌ skip this agent
       }
+      // ❌ BLOCK SUSPENDED AGENTS
+      const isSuspended = await redisClient.get(`agent:suspended:${agentId}`);
+      if (isSuspended === "true") {
+        continue;
+      }
 
       // Skip agents who declined this request
       const declinedAgents = await redisClient.sMembers(
