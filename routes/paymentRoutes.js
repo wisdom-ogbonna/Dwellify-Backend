@@ -1,8 +1,15 @@
 import express from "express";
-import { payAndReactivateAgent } from "../controllers/paymentController.js";
+import {
+  initializePayment,
+  paystackWebhook,
+} from "../controllers/paymentController.js";
 
 const router = express.Router();
 
-router.post("/pay", payAndReactivateAgent);
+// ✅ NEW route (payment link)
+router.post("/pay", initializePayment);
+
+// ✅ keep webhook
+router.post("/webhook", express.json(), paystackWebhook);
 
 export default router;

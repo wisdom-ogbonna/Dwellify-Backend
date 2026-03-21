@@ -40,9 +40,6 @@ app.use("/api/users", userRoutes);
 app.use("/api/payment", paymentRoutes);
 
 
-
-
-
 // ✅ Create HTTP server first
 const server = http.createServer(app);
 

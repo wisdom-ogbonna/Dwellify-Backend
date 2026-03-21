@@ -4,6 +4,20 @@ import { db } from "../config/firebase.js";
 /**
  * ACCEPT REQUEST
  */
+
+
+// ✅ PROPERTY PRICES
+const PROPERTY_PRICES = {
+  Apartment: 4000,
+  Shortlet: 5000,
+  Hotel: 2000,
+};
+
+// ✅ 20% CALCULATOR
+const calculateInspectionFee = (propertyType) => {
+  const price = PROPERTY_PRICES[propertyType] || 0;
+  return Math.floor(price * 0.2); // 20%
+};
 export const acceptClientRequest = async (req, res) => {
   try {
     const { agentId, requestId } = req.body;
@@ -191,6 +205,20 @@ const inspectionCount = await redisClient.incr(
   `agent:inspectionCount:${agentId}`
 );
 
+// ✅ GET PROPERTY TYPE
+const propertyType = request.propertyType;
+
+// ✅ CALCULATE FEE (20%)
+const inspectionFee = calculateInspectionFee(propertyType);
+
+// ✅ ADD TO TOTAL DUE
+const currentDue =
+  Number(await redisClient.get(`agent:paymentDue:${agentId}`)) || 0;
+
+const newDue = currentDue + inspectionFee;
+
+// SAVE NEW TOTAL
+await redisClient.set(`agent:paymentDue:${agentId}`, newDue);
 console.log("Inspection count:", inspectionCount);
 
 /**
@@ -200,10 +228,15 @@ if (inspectionCount >= 3) {
   await redisClient.set(`agent:suspended:${agentId}`, "true");
   await redisClient.set(`agent:status:${agentId}`, "suspended");
 
+  const totalDue = await redisClient.get(
+    `agent:paymentDue:${agentId}`
+  );
+
   return res.json({
     message: "Inspection completed. Account suspended. Please pay.",
     suspended: true,
     inspectionCount,
+    amountToPay: Number(totalDue), // ✅ SHOW TOTAL
   });
 }
 
@@ -211,6 +244,8 @@ return res.json({
   message: "Inspection completed",
   requestId,
   inspectionCount,
+  inspectionFee, // ✅ current job fee
+  totalDue: newDue, // ✅ running total
 });
   } catch (error) {
     console.error(error);
