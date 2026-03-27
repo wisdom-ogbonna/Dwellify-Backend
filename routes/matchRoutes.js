@@ -3,11 +3,12 @@ import {
   createClientRequest,
   matchAgentToClient,
 } from "../controllers/matchController.js";
+import { verifyFirebaseToken } from "../middlewares/auth.js";
 
 const router = express.Router();
 
-router.post("/request", createClientRequest);
-router.post("/match/:requestId", matchAgentToClient);
+router.post("/request", verifyFirebaseToken,createClientRequest);
+router.post("/match/:requestId", verifyFirebaseToken,matchAgentToClient);
 
 
 
