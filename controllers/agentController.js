@@ -85,7 +85,7 @@ export const verifyAgent = async (req, res) => {
           phone: phone || null,
           agencyName: agencyName || null,
           licenseId: licenseId || null,
-          verified: false,
+          verified: true,
           submittedAt: new Date(),
         },
         agentStatus: "submitted",
