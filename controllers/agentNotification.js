@@ -2,7 +2,8 @@ import { db } from "../config/firebase.js";
 
 export const agentNotification = async (req, res) => {
   try {
-    const { agentId, platform, expoPushToken, fcmToken } = req.body;
+    const agentId = req.user.uid;
+    const {platform, expoPushToken, fcmToken } = req.body;
 
     if (!agentId || !platform) {
       return res.status(400).json({ error: "Missing fields" });

@@ -9,7 +9,8 @@ import { v4 as uuidv4 } from "uuid";
  */
 export const createClientRequest = async (req, res) => {
   try {
-    const { clientId, lat, lng, propertyType } = req.body;
+      const clientId = req.user.uid; // ✅ get from verified token
+    const { lat, lng, propertyType } = req.body;
 
     if (!clientId || lat == null || lng == null || !propertyType) {
       return res.status(400).json({ error: "Missing fields" });

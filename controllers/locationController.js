@@ -8,7 +8,7 @@ import { db } from "../config/firebase.js";
  */
 export const agentGoOnline = async (req, res) => {
   try {
-    const { agentId } = req.body;
+    const agentId = req.user.uid;
 
     if (!agentId) {
       return res.status(400).json({ error: "Missing agentId" });
@@ -34,7 +34,7 @@ export const agentGoOnline = async (req, res) => {
 
 export const agentGoOffline = async (req, res) => {
   try {
-    const { agentId } = req.body;
+   const agentId = req.user.uid;
 
     if (!agentId) {
       return res.status(400).json({ error: "Missing agentId" });
@@ -60,7 +60,8 @@ export const agentGoOffline = async (req, res) => {
  */
 export const updateLocation = async (req, res) => {
   try {
-    const { agentId, lat, lng, load = 0, rating = 5 } = req.body;
+    const agentId = req.user.uid;
+    const {lat, lng, load = 0, rating = 5 } = req.body;
 
     if (!agentId || lat == null || lng == null) {
       return res.status(400).json({ error: "Missing agentId, lat or lng" });
@@ -101,7 +102,7 @@ export const updateLocation = async (req, res) => {
 
 export const getAgentLocation = async (req, res) => {
   try {
-    const { agentId } = req.params;
+    const agentId = req.user.uid;
 
     // 1️⃣ Get Redis location
     const key = `agent:location:${agentId}`;

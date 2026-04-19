@@ -110,7 +110,6 @@ export const verifyOTP = async (req, res) => {
     return res.status(200).json({
       success: true,
       firebaseToken,
-      uid: userRecord.uid,
       role,
       agentStatus,
       isNewUser,

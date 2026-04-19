@@ -1,7 +1,8 @@
 import { admin, db } from "../config/firebase.js";
 
 export const assignRole = async (req, res) => {
-  const { uid, role } = req.body;
+  const {role } = req.body;
+  const uid = req.user.uid;
 
   if (!uid || !role) {
     return res.status(400).json({ error: "uid and role are required" });

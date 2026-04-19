@@ -2,12 +2,7 @@ import { db } from "../config/firebase.js";
 
 export const getAgentProfile = async (req, res) => {
   try {
-    const { uid } = req.params;
-
-    // 🔐 Ensure user is requesting their own data
-    if (req.user.uid !== uid) {
-      return res.status(403).json({ error: "Unauthorized access" });
-    }
+    const uid = req.user.uid; // ✅ from ID token
 
     const docRef = db.collection("users").doc(uid);
     const docSnap = await docRef.get();
@@ -40,25 +35,17 @@ export const getAgentProfile = async (req, res) => {
 };
 
 export const verifyAgent = async (req, res) => {
-  const {
-    uid,
-    name,
-    email,
-    address,
-    phone,
-    agencyName,
-    licenseId,
-  } = req.body;
+  const { name, email, address, phone, agencyName, licenseId } = req.body;
+  const uid = req.user.uid; // ✅ from token
 
-  // 1️⃣ Basic validation
-  if (!uid || !name || !email || !address) {
+  // validation
+  if (!name || !email || !address) {
     return res.status(400).json({
-      error: "uid, name, email, and address are required",
+      error: "name, email, and address are required",
     });
   }
 
   try {
-    // 2️⃣ Get user document
     const userRef = db.collection("users").doc(uid);
     const userSnap = await userRef.get();
 
@@ -66,7 +53,6 @@ export const verifyAgent = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // 3️⃣ Ensure user is an agent
     const userData = userSnap.data();
 
     if (userData.role !== "agent") {
@@ -75,7 +61,13 @@ export const verifyAgent = async (req, res) => {
       });
     }
 
-    // 4️⃣ Save agent details
+    // optional: prevent resubmission
+    if (userData.agentStatus === "submitted") {
+      return res.status(400).json({
+        error: "Verification already submitted",
+      });
+    }
+
     await userRef.set(
       {
         agentDetails: {

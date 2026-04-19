@@ -4,22 +4,16 @@ import { db } from "../config/firebase.js";
    CLIENT VERIFICATION
 ========================= */
 export const verifyClient = async (req, res) => {
-  const { uid, name, email } = req.body;
+  const { name, email } = req.body;
+  const uid = req.user.uid; // ✅ from token
 
-  if (!uid || !name || !email) {
+  if (!name || !email) {
     return res.status(400).json({
-      error: "uid, name, and email are required",
+      error: "name and email are required",
     });
   }
 
   try {
-    // 🔐 Ensure user verifies their own account
-    if (req.user.uid !== uid) {
-      return res.status(403).json({
-        error: "Unauthorized request",
-      });
-    }
-
     const userRef = db.collection("users").doc(uid);
     const userSnap = await userRef.get();
 
@@ -32,7 +26,7 @@ export const verifyClient = async (req, res) => {
     const userData = userSnap.data();
 
     // Ensure role is client
-    if (userData.role !== "client") {
+    if (!userData.role || userData.role !== "client") {
       return res.status(403).json({
         error: "Only clients can verify client profile",
       });
@@ -69,16 +63,7 @@ export const verifyClient = async (req, res) => {
 ========================= */
 export const getClientProfile = async (req, res) => {
   try {
-    const { uid } = req.params;
-
-    console.log("PARAM UID:", uid);
-    console.log("TOKEN UID:", req.user?.uid);
-
-    if (req.user.uid !== uid) {
-      return res.status(403).json({
-        error: "Unauthorized access",
-      });
-    }
+    const uid = req.user.uid; // ✅ from token
 
     const doc = await db.collection("users").doc(uid).get();
 
@@ -90,9 +75,7 @@ export const getClientProfile = async (req, res) => {
 
     const data = doc.data();
 
-    console.log("USER DATA:", data);
-
-    if (data.role !== "client" || !data.clientDetails) {
+    if (!data.role || data.role !== "client" || !data.clientDetails) {
       return res.status(400).json({
         error: "User is not a client",
       });
