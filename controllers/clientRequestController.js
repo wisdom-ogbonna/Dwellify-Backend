@@ -20,7 +20,8 @@ const calculateInspectionFee = (propertyType) => {
 };
 export const acceptClientRequest = async (req, res) => {
   try {
-    const { agentId, requestId } = req.body;
+    const agentId = req.user.uid;
+    const { requestId } = req.body;
 
     if (!agentId || !requestId) {
       return res.status(400).json({ error: "Missing fields" });
@@ -84,7 +85,8 @@ export const acceptClientRequest = async (req, res) => {
  */
 export const declineClientRequest = async (req, res) => {
   try {
-    const { agentId, requestId } = req.body;
+    const agentId = req.user.uid;
+    const {requestId } = req.body;
 
     if (!agentId || !requestId) {
       return res.status(400).json({ error: "Missing fields" });
@@ -127,7 +129,8 @@ export const declineClientRequest = async (req, res) => {
 
 export const startInspection = async (req, res) => {
   try {
-    const { agentId, requestId } = req.body;
+    const agentId = req.user.uid;
+    const { requestId } = req.body;
     const isSuspended = await redisClient.get(`agent:suspended:${agentId}`);
     if (isSuspended === "true") {
       return res.status(403).json({
@@ -170,7 +173,8 @@ export const startInspection = async (req, res) => {
 
 export const endInspection = async (req, res) => {
   try {
-    const { agentId, requestId } = req.body;
+    const agentId = req.user.uid;
+    const { requestId } = req.body;
 
     const requestKey = `client:request:${requestId}`;
     const request = await redisClient.hGetAll(requestKey);
