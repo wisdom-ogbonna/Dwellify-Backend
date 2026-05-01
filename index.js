@@ -17,7 +17,8 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import clientRoutes from "./routes/clientRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
-
+import agentLiveRoutes from "./routes/agentLiveRoutes.js";
+import clientLiveRoutes from "./routes/clientLiveRoutes.js";
 const app = express();
 app.use(
   cors({
@@ -38,7 +39,8 @@ app.use("/api", notificationRoutes);
 app.use("/api/client", clientRequestRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/payment", paymentRoutes);
-
+app.use("/api/agent/live", agentLiveRoutes);
+app.use("/api/client/live", clientLiveRoutes);
 
 // ✅ Create HTTP server first
 const server = http.createServer(app);

@@ -12,6 +12,9 @@ export const createClientRequest = async (req, res) => {
       const clientId = req.user.uid; // ✅ get from verified token
     const { lat, lng, propertyType } = req.body;
 
+    console.log("🔥 CREATE CLIENT REQUEST HIT");
+console.log("CLIENT ID:", clientId);
+
     if (!clientId || lat == null || lng == null || !propertyType) {
       return res.status(400).json({ error: "Missing fields" });
     }
@@ -34,6 +37,13 @@ export const createClientRequest = async (req, res) => {
 
     // Optional TTL (e.g. 10 mins)
     await redisClient.expire(requestKey, 600);
+
+        // 🔥 STORE LIVE LOCATION (NEW)
+    await redisClient.hSet(`client:location:${clientId}`, {
+      lat: String(lat),
+      lng: String(lng),
+      updatedAt: Date.now().toString(),
+    });
 
     return res.json({
       message: "Client request created",
