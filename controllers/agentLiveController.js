@@ -10,6 +10,7 @@ export const getAgentLiveData = async (req, res) => {
 
     const locationKey = `agent:location:${agentId}`;
     const statusKey = `agent:status:${agentId}`;
+    const currentKey = `agent:current:${agentId}`; // 🔥 ADD THIS
 
     // 🔹 Get location data
     const locationData = await redisClient.hGetAll(locationKey);
@@ -21,7 +22,9 @@ export const getAgentLiveData = async (req, res) => {
     // 🔹 Get status
     const status = await redisClient.get(statusKey);
 
-    // 🔹 Return clean response
+    // 🔹 Get current request (🔥 NEW)
+    const currentData = await redisClient.hGetAll(currentKey);
+
     return res.json({
       agentId,
       isOnline: locationData.isOnline === "true",
@@ -31,6 +34,11 @@ export const getAgentLiveData = async (req, res) => {
       rating: Number(locationData.rating || 5),
       updatedAt: Number(locationData.updatedAt),
       status: status || "available",
+
+      // 🔥 ADD REQUEST INFO HERE
+      requestId: currentData?.requestId || null,
+      clientId: currentData?.clientId || null,
+      requestStatus: currentData?.status || null,
     });
 
   } catch (err) {

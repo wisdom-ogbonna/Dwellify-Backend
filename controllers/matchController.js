@@ -9,11 +9,8 @@ import { v4 as uuidv4 } from "uuid";
  */
 export const createClientRequest = async (req, res) => {
   try {
-      const clientId = req.user.uid; // ✅ get from verified token
+    const clientId = req.user.uid; // ✅ get from verified token
     const { lat, lng, propertyType } = req.body;
-
-    console.log("🔥 CREATE CLIENT REQUEST HIT");
-console.log("CLIENT ID:", clientId);
 
     if (!clientId || lat == null || lng == null || !propertyType) {
       return res.status(400).json({ error: "Missing fields" });
@@ -38,7 +35,7 @@ console.log("CLIENT ID:", clientId);
     // Optional TTL (e.g. 10 mins)
     await redisClient.expire(requestKey, 600);
 
-        // 🔥 STORE LIVE LOCATION (NEW)
+    // 🔥 STORE LIVE LOCATION (NEW)
     await redisClient.hSet(`client:location:${clientId}`, {
       lat: String(lat),
       lng: String(lng),
@@ -181,12 +178,22 @@ export const matchAgentToClient = async (req, res) => {
     const agent = agentUser.agentDetails;
 
     /**
-     * 6️⃣ LOCK REQUEST
+     * 6️⃣ LOCK REQUEST (CLIENT SIDE)
      */
     await redisClient.hSet(requestKey, {
       status: "offered",
       agentId: selectedAgent.agentId,
       offeredAt: Date.now().toString(),
+    });
+
+    /**
+     * 6.1️⃣ LOCK AGENT CURRENT STATE (IMPORTANT ADDITION)
+     */
+    await redisClient.hSet(`agent:current:${selectedAgent.agentId}`, {
+      requestId, // 👈 from function params
+      clientId: requestData.clientId,
+      status: "offered",
+      updatedAt: Date.now().toString(),
     });
 
     /**
