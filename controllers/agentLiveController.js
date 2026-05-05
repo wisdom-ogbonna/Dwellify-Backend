@@ -16,7 +16,19 @@ export const getAgentLiveData = async (req, res) => {
     const locationData = await redisClient.hGetAll(locationKey);
 
     if (!locationData || Object.keys(locationData).length === 0) {
-      return res.status(404).json({ error: "Agent not found or offline" });
+      return res.json({
+        agentId,
+        isOnline: false,
+        lat: null,
+        lng: null,
+        load: 0,
+        rating: 5,
+        updatedAt: null,
+        status: "offline",
+        requestId: null,
+        clientId: null,
+        requestStatus: null,
+      });
     }
 
     // 🔹 Get status
@@ -40,7 +52,6 @@ export const getAgentLiveData = async (req, res) => {
       clientId: currentData?.clientId || null,
       requestStatus: currentData?.status || null,
     });
-
   } catch (err) {
     console.error("❌ getAgentLiveData error:", err);
     return res.status(500).json({ error: "Server error" });
