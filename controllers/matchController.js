@@ -186,6 +186,8 @@ export const matchAgentToClient = async (req, res) => {
       offeredAt: Date.now().toString(),
     });
 
+    await redisClient.expire(requestKey, 86400);
+
     /**
      * 6.1️⃣ LOCK AGENT CURRENT STATE (IMPORTANT ADDITION)
      */
