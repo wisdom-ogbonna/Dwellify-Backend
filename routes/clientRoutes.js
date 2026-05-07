@@ -11,6 +11,6 @@ const router = Router();
 router.post("/verify", verifyFirebaseToken, verifyClient);
 
 // GET /api/client/profile/:uid
-router.get("/profile/", verifyFirebaseToken, getClientProfile);
+router.get("/profile", verifyFirebaseToken, getClientProfile);
 
 export default router;

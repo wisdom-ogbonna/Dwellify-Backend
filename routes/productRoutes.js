@@ -13,7 +13,8 @@ router.post(
   verifyFirebaseToken,
   upload.fields([
     { name: "images", maxCount: 10 },  // multiple images
-    { name: "image", maxCount: 1 }     // optional single image
+    { name: "image", maxCount: 1 },
+    { name: "video", maxCount: 1 },      // optional single image
   ]),
   addRentalProduct
 );

@@ -1,5 +1,6 @@
 import { db, bucket } from "../config/firebase.js";
 import { v4 as uuidv4 } from "uuid";
+import { uploadVideoToFirebase } from "../utils/uploadVideoToFirebase.js";
 
 // Helper to upload a file to Firebase Storage
 const uploadFileToFirebase = async (file) => {
@@ -23,20 +24,39 @@ const uploadFileToFirebase = async (file) => {
 // ===================== ADD PRODUCT =====================
 export const addRentalProduct = async (req, res) => {
   try {
-    const { title, location, price, propertyType } = req.body;
+    const {
+      title,
+      location,
+      price,
+      propertyType,
+      description,
+    } = req.body;
 
-    if (!title || !location || !price || !propertyType) {
+    // Validate fields
+    if (
+      !title ||
+      !location ||
+      !price ||
+      !propertyType ||
+      !description
+    ) {
       return res.status(400).json({
-        error: "Title, location, price and propertyType are required",
+        error:
+          "Title, location, price, propertyType and description are required",
       });
     }
 
+    // Validate property type
     if (!["Apartment", "Hotel", "Shortlet"].includes(propertyType)) {
-      return res.status(400).json({ error: "Invalid property type" });
+      return res.status(400).json({
+        error: "Invalid property type",
+      });
     }
 
+    // Store image URLs
     const images = [];
 
+    // Upload multiple images
     if (req.files?.images) {
       for (const img of req.files.images) {
         const url = await uploadFileToFirebase(img);
@@ -44,22 +64,58 @@ export const addRentalProduct = async (req, res) => {
       }
     }
 
+    // Upload single image
     if (req.files?.image?.[0]) {
-      const url = await uploadFileToFirebase(req.files.image[0]);
+      const url = await uploadFileToFirebase(
+        req.files.image[0]
+      );
+
       images.push(url);
     }
 
+    // VIDEO
+    let video = "";
+
+    if (req.files?.video?.[0]) {
+      const videoFile = req.files.video[0];
+
+      // Validate MP4
+      if (videoFile.mimetype !== "video/mp4") {
+        return res.status(400).json({
+          error: "Only MP4 videos are allowed",
+        });
+      }
+
+      // Validate max size (15MB)
+      const maxSize = 15 * 1024 * 1024;
+
+      if (videoFile.size > maxSize) {
+        return res.status(400).json({
+          error: "Video size must not exceed 15MB",
+        });
+      }
+
+      // Upload video
+      video = await uploadVideoToFirebase(videoFile);
+    }
+
+    // Product object
     const newProduct = {
       title,
       location,
       price,
-      propertyType, // 🔥 IMPORTANT
+      propertyType,
+      description,
       images,
+      video, // ✅ SAVE VIDEO URL
       created_at: new Date(),
       agentId: req.user.uid,
     };
 
-    const docRef = await db.collection("rentalProducts").add(newProduct);
+    // Save to Firestore
+    const docRef = await db
+      .collection("rentalProducts")
+      .add(newProduct);
 
     return res.status(201).json({
       message: "Rental product added successfully",
@@ -68,7 +124,10 @@ export const addRentalProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Error adding rental product:", error);
-    return res.status(500).json({ error: "Internal server error" });
+
+    return res.status(500).json({
+      error: "Internal server error",
+    });
   }
 };
 
