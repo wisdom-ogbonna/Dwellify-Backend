@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from "uuid";
  */
 export const createClientRequest = async (req, res) => {
   try {
-    const clientId = req.user.uid; // ✅ get from verified token
+    const clientId = req.user.uid;
     const { lat, lng, propertyType } = req.body;
 
     if (!clientId || lat == null || lng == null || !propertyType) {
@@ -20,7 +20,47 @@ export const createClientRequest = async (req, res) => {
       return res.status(400).json({ error: "Invalid property type" });
     }
 
+    // ✅ BLOCK CLIENT IF THEY ALREADY HAVE ACTIVE MATCH
+    const activeMatch = await redisClient.get(
+      `client:active_match:${clientId}`
+    );
+
+    if (activeMatch) {
+      return res.status(400).json({
+        error: "You already have an active request",
+      });
+    }
+
+    /**
+     * ===============================
+     * INVALIDATE OLD REQUEST
+     * ===============================
+     */
+    const activeRequestKey = `client:active_request:${clientId}`;
+
+    const oldRequestId = await redisClient.get(activeRequestKey);
+
+    if (oldRequestId) {
+      const oldRequestKey = `client:request:${oldRequestId}`;
+
+      // mark old request invalid
+      await redisClient.hSet(oldRequestKey, {
+        status: "invalidated",
+        invalidatedAt: Date.now().toString(),
+      });
+
+      // OPTIONAL:
+      // you can delete instead if you want
+      // await redisClient.del(oldRequestKey);
+    }
+
+    /**
+     * ===============================
+     * CREATE NEW REQUEST
+     * ===============================
+     */
     const requestId = uuidv4();
+
     const requestKey = `client:request:${requestId}`;
 
     await redisClient.hSet(requestKey, {
@@ -32,10 +72,23 @@ export const createClientRequest = async (req, res) => {
       createdAt: Date.now().toString(),
     });
 
-    // Optional TTL (e.g. 10 mins)
+    // request expires after 10 mins
     await redisClient.expire(requestKey, 600);
 
-    // 🔥 STORE LIVE LOCATION (NEW)
+    /**
+     * ===============================
+     * SAVE ACTIVE REQUEST
+     * ===============================
+     */
+    await redisClient.set(activeRequestKey, requestId);
+
+    await redisClient.expire(activeRequestKey, 86400);
+
+    /**
+     * ===============================
+     * STORE LIVE LOCATION
+     * ===============================
+     */
     await redisClient.hSet(`client:location:${clientId}`, {
       lat: String(lat),
       lng: String(lng),
@@ -48,7 +101,10 @@ export const createClientRequest = async (req, res) => {
     });
   } catch (err) {
     console.error("Create request error:", err);
-    return res.status(500).json({ error: "Server error" });
+
+    return res.status(500).json({
+      error: "Server error",
+    });
   }
 };
 
@@ -70,6 +126,13 @@ export const matchAgentToClient = async (req, res) => {
      */
     const requestKey = `client:request:${requestId}`;
     const requestData = await redisClient.hGetAll(requestKey);
+
+    // REQUEST NOT AVAILABLE OPTION
+    if (requestData.status === "invalidated") {
+      return res.status(400).json({
+        error: "Request is no longer active",
+      });
+    }
     // 🚨 BLOCK matching when already accepted or inspection started
     if (
       requestData.status === "matched" ||

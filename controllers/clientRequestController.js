@@ -5,7 +5,6 @@ import { db } from "../config/firebase.js";
  * ACCEPT REQUEST
  */
 
-
 // ✅ PROPERTY PRICES
 const PROPERTY_PRICES = {
   Apartment: 4000,
@@ -53,6 +52,9 @@ export const acceptClientRequest = async (req, res) => {
       matchedAt: Date.now().toString(),
     });
 
+    // ✅ LOCK CLIENT FROM REGENERATING
+    await redisClient.set(`client:active_match:${request.clientId}`, requestId);
+
     // ✅ SET AGENT STATUS (SEPARATE LINE)
     await redisClient.set(`agent:status:${agentId}`, "matched");
 
@@ -86,7 +88,7 @@ export const acceptClientRequest = async (req, res) => {
 export const declineClientRequest = async (req, res) => {
   try {
     const agentId = req.user.uid;
-    const {requestId } = req.body;
+    const { requestId } = req.body;
 
     if (!agentId || !requestId) {
       return res.status(400).json({ error: "Missing fields" });
@@ -199,58 +201,58 @@ export const endInspection = async (req, res) => {
     });
 
     await redisClient.set(`agent:status:${agentId}`, "inspection_completed");
+    // ✅ REMOVE CLIENT LOCK AFTER INSPECTION
+    await redisClient.del(`client:active_match:${request.clientId}`);
 
-await redisClient.hIncrBy(`agent:location:${agentId}`, "load", -1);
+    await redisClient.hIncrBy(`agent:location:${agentId}`, "load", -1);
 
-/**
- * ✅ COUNT INSPECTIONS
- */
-const inspectionCount = await redisClient.incr(
-  `agent:inspectionCount:${agentId}`
-);
+    /**
+     * ✅ COUNT INSPECTIONS
+     */
+    const inspectionCount = await redisClient.incr(
+      `agent:inspectionCount:${agentId}`
+    );
 
-// ✅ GET PROPERTY TYPE
-const propertyType = request.propertyType;
+    // ✅ GET PROPERTY TYPE
+    const propertyType = request.propertyType;
 
-// ✅ CALCULATE FEE (20%)
-const inspectionFee = calculateInspectionFee(propertyType);
+    // ✅ CALCULATE FEE (20%)
+    const inspectionFee = calculateInspectionFee(propertyType);
 
-// ✅ ADD TO TOTAL DUE
-const currentDue =
-  Number(await redisClient.get(`agent:paymentDue:${agentId}`)) || 0;
+    // ✅ ADD TO TOTAL DUE
+    const currentDue =
+      Number(await redisClient.get(`agent:paymentDue:${agentId}`)) || 0;
 
-const newDue = currentDue + inspectionFee;
+    const newDue = currentDue + inspectionFee;
 
-// SAVE NEW TOTAL
-await redisClient.set(`agent:paymentDue:${agentId}`, newDue);
-console.log("Inspection count:", inspectionCount);
+    // SAVE NEW TOTAL
+    await redisClient.set(`agent:paymentDue:${agentId}`, newDue);
+    console.log("Inspection count:", inspectionCount);
 
-/**
- * ✅ SUSPEND AFTER 3
- */
-if (inspectionCount >= 3) {
-  await redisClient.set(`agent:suspended:${agentId}`, "true");
-  await redisClient.set(`agent:status:${agentId}`, "suspended");
+    /**
+     * ✅ SUSPEND AFTER 3
+     */
+    if (inspectionCount >= 3) {
+      await redisClient.set(`agent:suspended:${agentId}`, "true");
+      await redisClient.set(`agent:status:${agentId}`, "suspended");
 
-  const totalDue = await redisClient.get(
-    `agent:paymentDue:${agentId}`
-  );
+      const totalDue = await redisClient.get(`agent:paymentDue:${agentId}`);
 
-  return res.json({
-    message: "Inspection completed. Account suspended. Please pay.",
-    suspended: true,
-    inspectionCount,
-    amountToPay: Number(totalDue), // ✅ SHOW TOTAL
-  });
-}
+      return res.json({
+        message: "Inspection completed. Account suspended. Please pay.",
+        suspended: true,
+        inspectionCount,
+        amountToPay: Number(totalDue), // ✅ SHOW TOTAL
+      });
+    }
 
-return res.json({
-  message: "Inspection completed",
-  requestId,
-  inspectionCount,
-  inspectionFee, // ✅ current job fee
-  totalDue: newDue, // ✅ running total
-});
+    return res.json({
+      message: "Inspection completed",
+      requestId,
+      inspectionCount,
+      inspectionFee, // ✅ current job fee
+      totalDue: newDue, // ✅ running total
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });
