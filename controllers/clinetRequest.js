@@ -32,6 +32,7 @@ export const clinetRequest = async (req, res) => {
     const docRef = db.collection("agent_requests").doc(requestId);
 
     await docRef.set({
+      type: "incoming_request",
       requestId,
       agentId,
       clientId,
@@ -51,6 +52,7 @@ export const clinetRequest = async (req, res) => {
     }
 
     const agentData = agentSnap.data();
+    console.log("Agent Data:", agentData);
 
     // ✅ Send notification
     await sendPushNotification(agentData, {

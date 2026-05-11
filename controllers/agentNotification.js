@@ -9,15 +9,26 @@ export const agentNotification = async (req, res) => {
       return res.status(400).json({ error: "Missing fields" });
     }
 
-    const updateData = { platform };
+const updateData = {
+  platform,
+  updatedAt: Date.now(),
+};
 
-    if (platform === "ios" && expoPushToken) {
-      updateData.expoPushToken = expoPushToken;
-    }
+if (platform === "ios") {
+  updateData.expoPushToken =
+    expoPushToken || null;
 
-    if (platform === "android" && fcmToken) {
-      updateData.fcmToken = fcmToken;
-    }
+  // remove old android token
+  updateData.fcmToken = null;
+}
+
+if (platform === "android") {
+  updateData.fcmToken =
+    fcmToken || null;
+
+  // remove old ios token
+  updateData.expoPushToken = null;
+}
 
     await db.collection("agents").doc(agentId).set(updateData, {
       merge: true,
