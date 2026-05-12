@@ -2,16 +2,65 @@ import axios from "axios";
 import { admin, db } from "../config/firebase.js";
 
 /* =========================
+   DEMO ACCOUNTS
+========================= */
+const DEMO_ACCOUNTS = [
+  {
+    phone: "+2348000000000",
+    otp: "123456",
+    pin_id: "demo_pin_1",
+  },
+  {
+    phone: "+2348000000001",
+    otp: "111111",
+    pin_id: "demo_pin_2",
+  },
+  {
+    phone: "+2348000000002",
+    otp: "222222",
+    pin_id: "demo_pin_3",
+  },
+];
+
+/* =========================
+   FIND DEMO ACCOUNT
+========================= */
+const getDemoAccount = (phone) => {
+  return DEMO_ACCOUNTS.find(
+    (acc) => acc.phone === phone
+  );
+};
+
+/* =========================
    SEND OTP
 ========================= */
 export const sendOTP = async (req, res) => {
   const { phone_number } = req.body;
 
   if (!phone_number) {
-    return res.status(400).json({ error: "Phone number is required" });
+    return res.status(400).json({
+      error: "Phone number is required",
+    });
   }
 
   try {
+    /* =========================
+       DEMO ACCOUNT BYPASS
+    ========================= */
+    const demoAccount = getDemoAccount(phone_number);
+
+    if (demoAccount) {
+      return res.status(200).json({
+        success: true,
+        demo: true,
+        pin_id: demoAccount.pin_id,
+        message: "Demo OTP sent",
+      });
+    }
+
+    /* =========================
+       REAL TERMII OTP
+    ========================= */
     const response = await axios.post(
       `${process.env.TERMII_BASE_URL}/api/sms/otp/send`,
       {
@@ -50,33 +99,56 @@ export const verifyOTP = async (req, res) => {
   const { pin_id, pin, phone_number } = req.body;
 
   if (!pin_id || !pin || !phone_number) {
-    return res
-      .status(400)
-      .json({ error: "pin_id, pin, and phone_number are required" });
+    return res.status(400).json({
+      error: "pin_id, pin, and phone_number are required",
+    });
   }
 
   try {
-    const response = await axios.post(
-      `${process.env.TERMII_BASE_URL}/api/sms/otp/verify`,
-      {
-        api_key: process.env.TERMII_API_KEY,
-        pin_id,
-        pin,
-      }
-    );
+    let verified = false;
 
-    const verified =
-      response.data?.verified === true ||
-      response.data?.verified === "true" ||
-      response.data?.status === "success";
+    /* =========================
+       DEMO ACCOUNT VERIFY
+    ========================= */
+    const demoAccount = getDemoAccount(phone_number);
+
+    if (
+      demoAccount &&
+      pin_id === demoAccount.pin_id &&
+      pin === demoAccount.otp
+    ) {
+      verified = true;
+    } else {
+      /* =========================
+         REAL TERMII VERIFY
+      ========================= */
+      const response = await axios.post(
+        `${process.env.TERMII_BASE_URL}/api/sms/otp/verify`,
+        {
+          api_key: process.env.TERMII_API_KEY,
+          pin_id,
+          pin,
+        }
+      );
+
+      verified =
+        response.data?.verified === true ||
+        response.data?.verified === "true" ||
+        response.data?.status === "success";
+    }
 
     if (!verified) {
-      return res.status(400).json({ error: "Invalid OTP" });
+      return res.status(400).json({
+        error: "Invalid OTP",
+      });
     }
 
     let userRecord;
+
     try {
-      userRecord = await admin.auth().getUserByPhoneNumber(phone_number);
+      userRecord = await admin
+        .auth()
+        .getUserByPhoneNumber(phone_number);
     } catch {
       userRecord = await admin.auth().createUser({
         phoneNumber: phone_number,
@@ -100,6 +172,7 @@ export const verifyOTP = async (req, res) => {
         verified: true,
         createdAt: new Date(),
       });
+
       isNewUser = true;
     }
 
