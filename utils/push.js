@@ -86,7 +86,6 @@ export const sendPushNotification = async (
         notification: {
           title: payload.title,
           body: payload.body,
-          imageUrl: "",
         },
 
         // ✅ android config
@@ -94,7 +93,7 @@ export const sendPushNotification = async (
           priority: "high",
 
           notification: {
-            channelId: "requests_v2",
+            channelId: "requests_v3",
 
             sound: "ringtone",
 

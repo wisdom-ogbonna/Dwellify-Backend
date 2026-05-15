@@ -1,4 +1,5 @@
 import { db } from "../config/firebase.js";
+import admin from "firebase-admin";
 
 /* =========================
    CLIENT VERIFICATION
@@ -89,6 +90,38 @@ export const getClientProfile = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       error: "Failed to fetch client profile",
+      details: error.message,
+    });
+  }
+};
+
+export const deleteClientAccount = async (req, res) => {
+  try {
+    const uid = req.user.uid;
+
+    // Get user first
+    const userRef = db.collection("users").doc(uid);
+    const userSnap = await userRef.get();
+
+    if (!userSnap.exists) {
+      return res.status(404).json({
+        error: "User not found",
+      });
+    }
+
+    // Delete Firestore user document
+    await userRef.delete();
+
+    // Delete Firebase Auth user
+    await admin.auth().deleteUser(uid);
+
+    return res.status(200).json({
+      success: true,
+      message: "Account deleted successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Failed to delete account",
       details: error.message,
     });
   }
